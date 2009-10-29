@@ -89,6 +89,10 @@ describe Puppet::Type do
         Puppet::Type.type(:mount).new(:name => "foo").version.should == 0
     end
 
+    it "should consider its type to be the name of its class" do
+        Puppet::Type.type(:mount).new(:name => "foo").type.should == :mount
+    end
+
     describe "when choosing a default provider" do
         it "should choose the provider with the highest specificity" do
             # Make a fake type

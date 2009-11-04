@@ -88,7 +88,9 @@ Puppet::Application.new(:puppet) do
         end
 
         # Collect our facts.
-        facts = Puppet::Node::Facts.find(Puppet[:certname])
+        unless facts = Puppet::Node::Facts.find(Puppet[:certname])
+            raise "Could not find facts for %s" % Puppet[:certname]
+        end
 
         # Find our Node
         unless node = Puppet::Node.find(Puppet[:certname])
@@ -128,6 +130,7 @@ Puppet::Application.new(:puppet) do
             transaction = catalog.apply
 
             status = 0
+            transaction.generate_report
             if not Puppet[:noop] and options[:detailed_exitcodes] then
                 transaction.generate_report
                 status |= 2 if transaction.report.metrics["changes"][:total] > 0

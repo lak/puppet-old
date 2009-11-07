@@ -208,8 +208,7 @@ class Puppet::Util::Log
         @levels.include?(level)
     end
 
-    attr_accessor :level, :message, :time, :remote, :file, :line, :version
-    attr_reader :source
+    attr_accessor :level, :message, :time, :remote, :file, :line, :version, :source
 
     def initialize(args)
         unless args.include?(:level) && args.include?(:message)
@@ -241,38 +240,12 @@ class Puppet::Util::Log
         Log.newmessage(self)
     end
 
-    # If they pass a source in to us, we make sure it is a string, and
-    # we retrieve any tags we can.
-    def source=(source)
-        # We can't store the actual source, we just store the path.
-        # We can't just check for whether it responds to :path, because
-        # plenty of providers respond to that in their normal function.
-        if (source.is_a?(Puppet::Type) or source.is_a?(Puppet::Parameter)) and source.respond_to?(:path)
-            set_source_from_ral(source)
-        else
-            @source = source.to_s
-        end
-    end
-
     def to_report
         "%s %s (%s): %s" % [self.time, self.source, self.level, self.to_s]
     end
 
     def to_s
         return @message
-    end
-
-    private
-
-    def set_source_from_ral(source)
-        @source = source.path
-
-        source.tags.each { |t| tag(t) }
-
-        [:file, :line, :version].each do |param|
-            next unless value = source.send(param)
-            send(param.to_s + "=", value)
-        end
     end
 end
 

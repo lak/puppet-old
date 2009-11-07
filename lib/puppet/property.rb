@@ -156,7 +156,7 @@ class Puppet::Property < Puppet::Parameter
 
     # Return a modified form of the resource event.
     def event
-        resource.event :name => event_name, :desired_value => should, :property => name, :source_description => path
+        resource.event :name => event_name, :desired_value => should, :property => self, :source_description => path
     end
 
     attr_reader :shadow
@@ -328,10 +328,6 @@ class Puppet::Property < Puppet::Parameter
         else
             self.devfail "Got a nil value for should"
         end
-    end
-
-    def to_s
-        return "#{resource.name}(#{name})"
     end
 
     # Verify that the passed value is valid.

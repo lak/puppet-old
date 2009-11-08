@@ -208,7 +208,7 @@ class Puppet::Transaction
         Puppet.info "Applying configuration version '%s'" % catalog.version if catalog.version
 
         begin
-            @sorted_resources.collect { |resource|
+            @sorted_resources.each do |resource|
                 if resource.is_a?(Puppet::Type::Component)
                     Puppet.warning "Somehow left a component in the relationship graph"
                     next
@@ -222,7 +222,7 @@ class Puppet::Transaction
                     resource.info "Evaluated in %0.2f seconds" % seconds
                 end
                 ret
-            }.flatten.reject { |e| e.nil? }
+            end
         ensure
             # And then close the transaction log.
             Puppet::Util::Log.close(@report)

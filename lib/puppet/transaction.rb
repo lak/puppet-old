@@ -97,6 +97,29 @@ class Puppet::Transaction
         changes.each { |change| apply_change(resource, change) }
     end
 
+    def apply_reversion
+        @reverting = true
+        last_report = Puppet::Transaction::Report.last_transaction_log
+
+        Puppet.notice "Applying reversion from transaction log at #{last_report.time}"
+
+        last_report.events.each do |event|
+            unless event.property
+                next
+            end
+            
+            unless resource = catalog.resource(event.resource)
+                raise "Could not find resource '#{event.resource}' for '#{event.message}'"
+            end
+
+            # set the should value
+            event.info "Reverting to #{event.previous_value}"
+            resource[event.property] = event.previous_value
+        end
+
+        Puppet::Transaction::Report.remove_last_transaction_log
+    end
+
     # Find all of the changed resources.
     def changed?
         @changes.find_all do |change| change.changed end.collect do |change|
@@ -227,6 +250,8 @@ class Puppet::Transaction
             # And then close the transaction log.
             Puppet::Util::Log.close(@report)
         end
+
+        store_transaction_log
 
         Puppet.debug "Finishing transaction #{object_id} with #{@changes.length} changes"
     end
@@ -368,6 +393,7 @@ class Puppet::Transaction
         end
 
         @report = Report.new
+        @report.version = @catalog.version
 
         @event_manager = Puppet::Transaction::EventManager.new(self)
     end
@@ -414,6 +440,10 @@ class Puppet::Transaction
         catalog.relationship_graph
     end
 
+    def reverting?
+        !! @reverting
+    end
+
     # Send off the transaction report.
     def send_report
         begin
@@ -434,6 +464,12 @@ class Puppet::Transaction
                 Puppet.err "Reporting failed: %s" % detail
             end
         end
+    end
+
+    def store_transaction_log
+        return if reverting?
+        catalog.store_for_posterity
+        report.store_as_transaction_log
     end
 
     # Roll all completed changes back.

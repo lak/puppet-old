@@ -11,11 +11,25 @@ class Puppet::Transaction::Report
     indirects :report, :terminus_class => :processor
 
     attr_reader :events, :logs, :metrics, :host, :time
+    attr_accessor :version
 
     # This is necessary since Marshall doesn't know how to
     # dump hash with default proc (see below @records)
     def self.default_format
         :yaml
+    end
+
+    def self.last_transaction_log_name
+        last = Dir.entries(Puppet[:client_transactionlog_dir]).find_all { |f| f =~ /\d+\.yaml/ }.sort.last
+        File.join(Puppet[:client_transactionlog_dir], last)
+    end
+
+    def self.last_transaction_log
+        YAML.load_file(last_transaction_log_name)
+    end
+
+    def self.remove_last_transaction_log
+        File.unlink(last_transaction_log_name)
     end
 
     def <<(msg)
@@ -48,6 +62,17 @@ class Puppet::Transaction::Report
 
     def register_event(event)
         @events << event
+    end
+
+    def store_as_transaction_log
+        return if events.empty?
+        return unless version
+
+        Puppet.settings.use(:puppetd)
+
+        name = File.join(Puppet[:client_transactionlog_dir], Time.now.to_i.to_s + ".yaml")
+
+        File.open(name, "w") { |f| f.print to_yaml }
     end
 
     # Provide a summary of this report.

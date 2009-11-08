@@ -492,6 +492,8 @@ module Puppet
             },
         :clientyamldir => {:default => "$vardir/client_yaml", :mode => "750",
             :desc => "The directory in which client-side YAML data is stored."},
+        :client_transactionlog_dir => ["$statedir/transaction_logs", "Where we store transaction logs."],
+        :client_catalog_dir => ["$statedir/catalog_logs", "Where we store old catalogs."],
         :classfile => { :default => "$statedir/classes.txt",
             :owner => "root",
             :mode => 0644,

@@ -15,6 +15,7 @@ Puppet::Application.new(:puppet) do
     option("--verbose","-v")
     option("--use-nodes")
     option("--detailed-exitcodes")
+    option("--revert")
 
     option("--apply catalog",  "-a catalog") do |arg|
         options[:catalog] = arg
@@ -32,11 +33,20 @@ Puppet::Application.new(:puppet) do
     dispatch do
         if options[:catalog]
             :apply
+        elsif options[:revert]
+            :revert
         elsif Puppet[:parseonly]
             :parseonly
         else
             :main
         end
+    end
+
+    command(:revert) do
+        require 'puppet/configurer'
+
+        configurer = Puppet::Configurer.new
+        configurer.run :revert => true
     end
 
     command(:apply) do
@@ -120,7 +130,7 @@ Puppet::Application.new(:puppet) do
             # Translate it to a RAL catalog
             catalog = catalog.to_ral
 
-            catalog.host_config = true if Puppet[:graph] or Puppet[:report]
+            catalog.host_config = true
 
             catalog.finalize
 

@@ -33,8 +33,8 @@ class Puppet::Transaction::Event
         @resource = res.to_s
     end
 
-    def send_log
-        super(log_level, message)
+    def send_event_log
+        send_log(log_level, message)
     end
 
     def status=(value)

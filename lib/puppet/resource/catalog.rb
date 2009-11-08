@@ -46,6 +46,16 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
     # whether it is written back out again.
     attr_accessor :from_cache
 
+    def self.catalog_by_version(version)
+        file = File.join(Puppet[:client_catalog_dir], version.to_s + ".json")
+        unless FileTest.exist?(file)
+            puts "No catalog at #{file}"
+            return nil
+        end
+
+        JSON.parse(File.read(file))
+    end
+
     # Add classes to our class list.
     def add_class(*classes)
         classes.each do |klass|
@@ -134,6 +144,8 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
 
         transaction.addtimes :config_retrieval => self.retrieval_duration
 
+
+        transaction.apply_reversion if options[:revert]
 
         begin
             transaction.evaluate
@@ -443,6 +455,16 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
             res = Puppet::Resource.from_json(res)
         end
         result.add_resource(res)
+    end
+
+    # Write the catalog so we can do reversions
+    def store_for_posterity
+        return unless host_config?
+        Puppet.settings.use(:puppetd)
+
+        name = File.join(Puppet[:client_catalog_dir], version.to_s + ".json")
+
+        File.open(name, "w") { |f| f.print to_resource.to_json }
     end
 
     def to_json(*args)

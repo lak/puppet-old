@@ -593,6 +593,14 @@ class Type
         rethash
     end
 
+    def to_resource
+        result = Puppet::Resource.new(type, title)
+        to_hash.each do |param, value|
+            result[param] = value
+        end
+        result
+    end
+
     def type
         self.class.name
     end

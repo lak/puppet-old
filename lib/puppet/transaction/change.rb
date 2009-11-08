@@ -42,7 +42,7 @@ class Puppet::Transaction::Change
         result = event()
         result.message = property.change_to_s(is, should)
         result.status = "success"
-        result.send_log
+        result.send_event_log
         result
     rescue => detail
         puts detail.backtrace if Puppet[:trace]
@@ -52,7 +52,7 @@ class Puppet::Transaction::Change
         is = property.is_to_s(is)
         should = property.should_to_s(should)
         result.message = "change from #{is} to #{should} failed: #{detail}"
-        result.send_log
+        result.send_event_log
         result
     end
 
@@ -84,7 +84,7 @@ class Puppet::Transaction::Change
         result = event
         result.message = "is #{property.is_to_s(is)}, should be #{property.should_to_s(should)} (noop)"
         result.status = "noop"
-        result.send_log
+        result.send_event_log
         return result
     end
 end

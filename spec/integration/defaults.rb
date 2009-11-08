@@ -204,4 +204,8 @@ describe "Puppet defaults" do
             Puppet.settings[:report_server].should == "report_server"
         end
     end
+
+    it "should have a client transaction log directory in the state directory" do
+        Puppet.settings[:client_transactionlog_dir].should == File.join(Puppet.settings[:statedir], "transaction_logs")
+    end
 end

@@ -34,6 +34,28 @@ class Puppet::Configurer
         Puppet[:puppetdlockfile]
     end
 
+    def apply(catalog, options)
+        catalog.host_config = true
+
+        begin
+            benchmark(:notice, "Finished catalog run") do
+                catalog.apply(options)
+            end
+        rescue => detail
+            puts detail.backtrace if Puppet[:trace]
+            Puppet.err "Failed to apply catalog: %s" % detail
+        end
+    end
+
+    def catalog_for_reversion
+        last_report = Puppet::Transaction::Report.last_transaction_log
+        raise "Could not find catalog version for last transaction log" unless last_report.version
+        unless catalog = Puppet::Resource::Catalog.catalog_by_version(last_report.version)
+            raise "Could not find catalog version #{last_report.version}"
+        end
+        catalog.to_ral
+    end
+
     def clear
         @catalog.clear(true) if @catalog
         @catalog = nil
@@ -135,21 +157,18 @@ class Puppet::Configurer
     def run(options = {})
         prepare()
 
-        if catalog = options[:catalog]
+        if options[:revert]
+            Puppet.warning "Finding catalog for reversion"
+            catalog = catalog_for_reversion
+            catalog.host_config = true
+        elsif catalog = options[:catalog]
             options.delete(:catalog)
         elsif ! catalog = retrieve_catalog
             Puppet.err "Could not retrieve catalog; skipping run"
             return
         end
 
-        begin
-            benchmark(:notice, "Finished catalog run") do
-                catalog.apply(options)
-            end
-        rescue => detail
-            puts detail.backtrace if Puppet[:trace]
-            Puppet.err "Failed to apply catalog: %s" % detail
-        end
+        apply(catalog, options)
 
         # Now close all of our existing http connections, since there's no
         # reason to leave them lying open.

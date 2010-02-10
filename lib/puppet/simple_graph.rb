@@ -365,14 +365,15 @@ class Puppet::SimpleGraph
         # recursion make the shorter, recursive algorithm cost-prohibitive.
         stack = [source]
         seen = Set.new
+
         until stack.empty?
             node = stack.shift
             next if seen.member? node
-            connected = adjacent(node, :direction => direction)
-            connected.each do |target|
-                yield node, target
+            connected = adjacent(node, :direction => direction, :type => :edges)
+            connected.each do |edge|
+                stack << edge.target
+                yield node, edge.target
             end
-            stack.concat(connected)
             seen << node
         end
     end

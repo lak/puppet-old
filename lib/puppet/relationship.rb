@@ -28,7 +28,7 @@ class Puppet::Relationship
 
     def <=>(other)
         return 0 if other.type == self.type
-        if type == :relationship
+        if type == :dependency
             return -1
         else
             return 1

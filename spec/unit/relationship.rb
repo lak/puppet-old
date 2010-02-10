@@ -1,7 +1,4 @@
 #!/usr/bin/env ruby
-#
-#  Created by Luke Kanies on 2007-11-1.
-#  Copyright (c) 2006. All rights reserved.
 
 require File.dirname(__FILE__) + '/../spec_helper'
 require 'puppet/relationship'
@@ -29,6 +26,11 @@ describe Puppet::Relationship do
         @edge.event.should == :NONE
     end
 
+    it "should have an :type attribute" do
+        @edge.type = :dependency
+        @edge.type.should == :dependency
+    end
+
     it "should require a callback if a non-NONE event is specified" do
         proc { @edge.event = :something }.should raise_error(ArgumentError)
     end
@@ -51,6 +53,13 @@ describe Puppet::Relationship do
 
     it "should work if nil options are provided" do
         lambda { Puppet::Relationship.new("a", "b", nil) }.should_not raise_error
+    end
+
+    it "should sort dependency edges before containment edges" do
+        one = Puppet::Relationship.new("a", "b", :type => :containment)
+        two = Puppet::Relationship.new("a", "b", :type => :dependency)
+
+        [one, two].sort.should == [two, one]
     end
 end
 

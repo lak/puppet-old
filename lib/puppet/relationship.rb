@@ -1,10 +1,4 @@
 #!/usr/bin/env ruby
-#
-#  Created by Luke A. Kanies on 2006-11-24.
-#  Copyright (c) 2006. All rights reserved.
-
-# subscriptions are permanent associations determining how different
-# objects react to an event
 
 require 'puppet/util/pson'
 
@@ -15,7 +9,7 @@ class Puppet::Relationship
     extend Puppet::Util::Pson
     attr_accessor :source, :target, :callback
 
-    attr_reader :event
+    attr_reader :event, :type
 
     def self.from_pson(pson)
         source = pson["source"]
@@ -31,6 +25,15 @@ class Puppet::Relationship
 
         new(source, target, args)
     end
+
+    def <=>(other)
+        return 0 if other.type == self.type
+        if type == :relationship
+            return -1
+        else
+            return 1
+        end
+    end
     
     def event=(event)
         if event != :NONE and ! callback
@@ -43,7 +46,7 @@ class Puppet::Relationship
         @source, @target = source, target
 
         options = (options || {}).inject({}) { |h,a| h[a[0].to_sym] = a[1]; h }
-        [:callback, :event].each do |option|
+        [:callback, :event, :type].each do |option|
             if value = options[option]
                 send(option.to_s + "=", value)
             end
@@ -92,5 +95,13 @@ class Puppet::Relationship
 
     def to_s
         ref
+    end
+
+    def type=(value)
+        value = value.to_sym
+        unless [:containment, :dependency].include?(value)
+            raise ArgumentError, "Invalid relationship type #{value}"
+        end
+        @type = value
     end
 end

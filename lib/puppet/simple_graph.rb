@@ -7,6 +7,8 @@ require 'set'
 
 # A hopefully-faster graph class to replace the use of GRATR.
 class Puppet::SimpleGraph
+    WalkState = Struct.new(:direction, :stack, :seen, :frontier)
+
     # An internal class for handling a vertex's edges.
     class VertexWrapper
         attr_accessor :in, :out, :vertex
@@ -359,23 +361,22 @@ class Puppet::SimpleGraph
     end
 
     # Just walk the tree and pass each edge.
-    def walk(source, direction)
+    def walk(source, direction, &block)
         # Use an iterative, breadth-first traversal of the graph. One could do
         # this recursively, but Ruby's slow function calls and even slower
         # recursion make the shorter, recursive algorithm cost-prohibitive.
-        stack = [source]
-        seen = Set.new
+        state = WalkState.new(direction, [source], Set.new, [])
 
-        until stack.empty?
-            node = stack.shift
-            next if seen.member? node
-            connected = adjacent(node, :direction => direction, :type => :edges)
-            connected.each do |edge|
-                stack << edge.target
-                yield node, edge.target
+        # We want to evaluate as much of the stack as possible before
+        # evaluating anything in the frontier
+        while true do
+            until state.stack.empty?
+                walk_and_fill_stack(state, &block)
             end
-            seen << node
+            break unless reduced_frontier?(state, &block)
         end
+
+        fail_unless_frontier_is_empty(state)
     end
 
     # A different way of walking a tree, and a much faster way than the
@@ -451,5 +452,54 @@ class Puppet::SimpleGraph
         File.open(file, "w") { |f|
             f.puts to_dot("name" => name.to_s.capitalize)
         }
+    end
+
+    private
+
+    def expand_frontier?(edge, state)
+        unless seen_all_dependencies?(edge.target, state)
+            state.frontier << edge
+            return true
+        end
+
+        return false
+    end
+
+    def fail_unless_frontier_is_empty(state)
+        unless state.frontier.empty?
+            string = state.frontier.collect { |edge| edge.to_s }.join(", ")
+            raise "Dependency problems precluded evaluation of #{string}"
+        end
+    end
+
+    def reduced_frontier?(state, &block)
+        reduced = false
+        state.frontier.each do |edge|
+            if seen_all_dependencies?(edge.target, state)
+                reduced = true
+                yield edge.source, edge.target
+                state.stack << edge.target
+                state.frontier.delete(edge)
+            end
+        end
+        return reduced
+    end
+
+    def walk_and_fill_stack(state)
+        node = state.stack.shift
+        return if state.seen.member? node
+        adjacent(node, :direction => state.direction, :type => :edges).each do |edge|
+            next if expand_frontier?(edge, state)
+            state.stack << edge.target
+            yield node, edge.target
+        end
+        state.seen << node
+    end
+
+    def seen_all_dependencies?(source, state)
+        adjacent(source, :direction => state.direction, :type => :edges).each do |edge|
+            return false if edge.type == :dependency and ! state.seen.include?(edge.target)
+        end
+        return true
     end
 end

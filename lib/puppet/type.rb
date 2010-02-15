@@ -1285,9 +1285,7 @@ class Type
                     self.debug("requires %s" % [related_resource.ref])
                 end
 
-                rel = Puppet::Relationship.new(source, target, args)
-                rel.type = :dependency
-                rel
+                Puppet::Relationship.new(source, target, args)
             end
         end
     end

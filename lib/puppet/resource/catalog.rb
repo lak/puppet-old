@@ -50,6 +50,14 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
     # Some metadata to help us compile and generally respond to the current state.
     attr_accessor :client_version, :server_version
 
+    def add_dependency_edges
+        vertices.each do |vertex|
+            vertex.builddepends.each do |edge|
+                add_edge(edge)
+            end
+        end
+    end
+
     # Add classes to our class list.
     def add_class(*classes)
         classes.each do |klass|

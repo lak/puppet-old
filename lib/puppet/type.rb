@@ -1276,20 +1276,18 @@ class Type
                     target = related_resource
                 end
 
+                args = {:type => :dependency}
                 if method = self.class.callback
-                    subargs = {
-                        :event => self.class.events,
-                        :callback => method
-                    }
+                    args[:event] = self.class.events
+                    args[:callback] = method
                     self.debug("subscribes to %s" % [related_resource.ref])
                 else
-                    # If there's no callback, there's no point in even adding
-                    # a label.
-                    subargs = nil
                     self.debug("requires %s" % [related_resource.ref])
                 end
 
-                rel = Puppet::Relationship.new(source, target, subargs)
+                rel = Puppet::Relationship.new(source, target, args)
+                rel.type = :dependency
+                rel
             end
         end
     end

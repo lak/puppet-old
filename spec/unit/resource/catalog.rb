@@ -569,6 +569,23 @@ describe Puppet::Resource::Catalog, "when compiling" do
         end
     end
 
+    describe "when adding dependency edges" do
+        it "should add the dependency edges from each resource to the graph as dependency edges" do
+            @catalog = Puppet::Resource::Catalog.new
+
+            one = @catalog.create_resource :notify, :name => "one"
+            two = @catalog.create_resource :notify, :name => "two", :require => "Notify[one]"
+            three = @catalog.create_resource :notify, :name => "three", :require => "Notify[two]"
+
+            @catalog.add_dependency_edges
+
+            @catalog.should be_edge(one, two)
+            @catalog.should be_edge(two, three)
+
+            @catalog.edge(one, two).type.should == :dependency
+        end
+    end
+
     describe "when applying" do
         before :each do
             @catalog = Puppet::Resource::Catalog.new("host")

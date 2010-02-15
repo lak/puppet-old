@@ -383,8 +383,8 @@ class Puppet::SimpleGraph
     # one that comes with GRATR.
     def tree_from_vertex(start, direction = :out)
         predecessor={}
-        walk(start, direction) do |parent, child|
-            predecessor[child] = parent
+        walk(start, direction) do |edge|
+            predecessor[edge.target] = edge.source
         end
         predecessor
     end
@@ -477,7 +477,7 @@ class Puppet::SimpleGraph
         state.frontier.each do |edge|
             if seen_all_dependencies?(edge.target, state)
                 reduced = true
-                yield edge.source, edge.target
+                yield edge
                 state.stack << edge.target
                 state.frontier.delete(edge)
             end
@@ -491,7 +491,7 @@ class Puppet::SimpleGraph
         adjacent(node, :direction => state.direction, :type => :edges).each do |edge|
             next if expand_frontier?(edge, state)
             state.stack << edge.target
-            yield node, edge.target
+            yield edge
         end
         state.seen << node
     end

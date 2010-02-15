@@ -45,8 +45,8 @@ describe Puppet::SimpleGraph do
         @graph.add_edge Puppet::Relationship.new(:done, :dtwo, :type => :containment)
         @graph.add_edge Puppet::Relationship.new(:cone, :done, :type => :dependency)
         targets = []
-        @graph.walk(:top, :out) do |source, target|
-            targets << target unless targets.include?(target)
+        @graph.walk(:top, :out) do |edge|
+            targets << edge.target unless targets.include?(edge.target)
         end
         targets.should == [:done, :dtwo, :cone, :ctwo]
     end

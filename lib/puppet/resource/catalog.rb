@@ -229,10 +229,10 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
         # Create a proc for examining edges, which we'll use to build our tree
         # of TransBuckets and TransObjects.
         bucket = nil
-        walk(main, :out) do |source, target|
+        walk(main, :out) do |edge|
             # The sources are always non-builtins.
-            unless tmp = buckets[source.to_s]
-                if tmp = buckets[source.to_s] = source.to_trans
+            unless tmp = buckets[edge.source.to_s]
+                if tmp = buckets[edge.source.to_s] = edge.source.to_trans
                     bucket = tmp
                 else
                     # This is because virtual resources return nil.  If a virtual
@@ -242,16 +242,16 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
                 end
             end
             bucket = tmp || bucket
-            if child = target.to_trans
+            if child = edge.target.to_trans
                 unless bucket
-                    raise "No bucket created for %s" % source
+                    raise "No bucket created for %s" % edge.source
                 end
                 bucket.push child
 
                 # It's important that we keep a reference to any TransBuckets we've created, so
                 # we don't create multiple buckets for children.
-                unless target.builtin?
-                    buckets[target.to_s] = child
+                unless edge.target.builtin?
+                    buckets[edge.target.to_s] = child
                 end
             end
         end

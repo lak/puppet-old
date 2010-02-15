@@ -582,7 +582,7 @@ describe Puppet::Resource::Catalog, "when compiling" do
             @catalog.should be_edge(one, two)
             @catalog.should be_edge(two, three)
 
-            @catalog.edge(one, two).type.should == :dependency
+            @catalog.edge(one, two).should be_dependency
         end
     end
 

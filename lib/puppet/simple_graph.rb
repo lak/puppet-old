@@ -498,7 +498,7 @@ class Puppet::SimpleGraph
 
     def seen_all_dependencies?(source, state)
         adjacent(source, :direction => state.direction, :type => :edges).each do |edge|
-            return false if edge.type == :dependency and ! state.seen.include?(edge.target)
+            return false if edge.dependency? and ! state.seen.include?(edge.target)
         end
         return true
     end

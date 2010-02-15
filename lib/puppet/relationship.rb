@@ -34,6 +34,14 @@ class Puppet::Relationship
             return 1
         end
     end
+
+    def containment?
+        type == :containment
+    end
+
+    def dependency?
+        type == :dependency
+    end
     
     def event=(event)
         if event != :NONE and ! callback

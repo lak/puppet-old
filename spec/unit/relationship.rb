@@ -61,6 +61,22 @@ describe Puppet::Relationship do
 
         [one, two].sort.should == [two, one]
     end
+
+    it "should not be considered a dependency edge when its type is not set to dependency" do
+        Puppet::Relationship.new("a", "b", :type => :containment).should_not be_dependency
+    end
+
+    it "should be considered a dependency edge when its type is set to dependency" do
+        Puppet::Relationship.new("a", "b", :type => :dependency).should be_dependency
+    end
+
+    it "should not be considered a containment edge when its type is not set to containment" do
+        Puppet::Relationship.new("a", "b", :type => :dependency).should_not be_containment
+    end
+
+    it "should be considered a containment edge when its type is set to containment" do
+        Puppet::Relationship.new("a", "b", :type => :containment).should be_containment
+    end
 end
 
 describe Puppet::Relationship, " when initializing" do

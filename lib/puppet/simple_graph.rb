@@ -185,34 +185,28 @@ class Puppet::SimpleGraph
 
     # Provide a topological sort.
     def topsort
-        degree = {}
         zeros = []
         result = []
 
         # Collect each of our vertices, with the number of in-edges each has.
         @vertices.each do |name, wrapper|
-            edges = wrapper.in_edges
-            zeros << wrapper if edges.length == 0
-            degree[wrapper.vertex] = edges
+            zeros << wrapper if wrapper.in_edges.length == 0
         end
 
-        # Iterate over each 0-degree vertex, decrementing the degree of
-        # each of its out-edges.
-        while wrapper = zeros.pop do
-            result << wrapper.vertex
-            wrapper.out_edges.each do |edge|
-                degree[edge.target].delete(edge)
-                zeros << @vertices[edge.target] if degree[edge.target].length == 0
+        unless zeros.length > 0
+            raise Puppet::Error,
+                "Found dependency cycles, such that there is no starting point for a sort; try using the '--graph' option and open the '.dot' files in OmniGraffle or GraphViz"
+        end
+
+        zeros.each do |wrapper|
+            # This will fail if there's a cycle
+            walk(wrapper.vertex, :out) do |edge|
+                result << edge.source unless result.include?(edge.source)
+                result << edge.target unless result.include?(edge.target)
             end
         end
 
-        # If we have any vertices left with non-zero in-degrees, then we've found a cycle.
-        if cycles = degree.find_all { |vertex, edges| edges.length > 0 } and cycles.length > 0
-            message = cycles.collect { |vertex, edges| edges.collect { |e| e.to_s }.join(", ") }.join(", ")
-            raise Puppet::Error, "Found dependency cycles in the following relationships: %s; try using the '--graph' option and open the '.dot' files in OmniGraffle or GraphViz" % message
-        end
-
-        return result
+        return result.to_a
     end
 
     # Add a new vertex to the graph.
@@ -314,52 +308,6 @@ class Puppet::SimpleGraph
 #        end
 #    end
 
-    # Take container information from another graph and use it
-    # to replace any container vertices with their respective leaves.
-    # This creates direct relationships where there were previously
-    # indirect relationships through the containers.
-    def splice!(other, type)
-        # We have to get the container list via a topological sort on the
-        # configuration graph, because otherwise containers that contain
-        # other containers will add those containers back into the
-        # graph.  We could get a similar affect by only setting relationships
-        # to container leaves, but that would result in many more
-        # relationships.
-        containers = other.topsort.find_all { |v| v.is_a?(type) and vertex?(v) }
-        containers.each do |container|
-            # Get the list of children from the other graph.
-            children = other.adjacent(container, :direction => :out)
-
-            # Just remove the container if it's empty.
-            if children.empty?
-                remove_vertex!(container)
-                next
-            end
-
-            # First create new edges for each of the :in edges
-            [:in, :out].each do |dir|
-                edges = adjacent(container, :direction => dir, :type => :edges)
-                edges.each do |edge|
-                    children.each do |child|
-                        if dir == :in
-                            s = edge.source
-                            t = child
-                        else
-                            s = child
-                            t = edge.target
-                        end
-
-                        add_edge(s, t, edge.label)
-                    end
-
-                    # Now get rid of the edge, so remove_vertex! works correctly.
-                    remove_edge!(edge)
-                end
-            end
-            remove_vertex!(container)
-        end
-    end
-
     # Just walk the tree and pass each edge.
     def walk(source, direction, &block)
         # Use an iterative, breadth-first traversal of the graph. One could do
@@ -376,6 +324,8 @@ class Puppet::SimpleGraph
             break unless reduced_frontier?(state, &block)
         end
 
+        # This doesn't actually find cycles in the graph, and it needs
+        # do.
         fail_unless_frontier_is_empty(state)
     end
 
@@ -468,7 +418,7 @@ class Puppet::SimpleGraph
     def fail_unless_frontier_is_empty(state)
         unless state.frontier.empty?
             string = state.frontier.collect { |edge| edge.to_s }.join(", ")
-            raise "Dependency problems precluded evaluation of #{string}"
+            raise Puppet::Error, "Found dependency cycles in the following relationships: #{string}; try using the '--graph' option and open the '.dot' files in OmniGraffle or GraphViz"
         end
     end
 

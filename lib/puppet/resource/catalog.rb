@@ -73,7 +73,6 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
     # aspects of Catalog behaviour:
     # * Add the resource to the resource table
     # * Add the resource to the resource graph
-    # * Add the resource to the relationship graph
     # * Add any aliases that make sense for the resource (e.g., name != title)
     def add_resource(*resources)
         resources.each do |resource|
@@ -95,10 +94,6 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
             resource.catalog = self if resource.respond_to?(:catalog=)
 
             add_vertex(resource)
-
-            if @relationship_graph
-                @relationship_graph.add_vertex(resource)
-            end
 
             yield(resource) if block_given?
         end
@@ -179,11 +174,6 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
         # We have to do this so that the resources clean themselves up.
         @resource_table.values.each { |resource| resource.remove } if remove_resources
         @resource_table.clear
-
-        if defined?(@relationship_graph) and @relationship_graph
-            @relationship_graph.clear
-            @relationship_graph = nil
-        end
     end
 
     def classes
@@ -298,7 +288,6 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
         @resource_table = {}
         @transient_resources = []
         @applying = false
-        @relationship_graph = nil
 
         @aliases = {}
 
@@ -322,47 +311,6 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
         end
     end
 
-    # Create a graph of all of the relationships in our catalog.
-    def relationship_graph
-        unless defined? @relationship_graph and @relationship_graph
-            # It's important that we assign the graph immediately, because
-            # the debug messages below use the relationships in the
-            # relationship graph to determine the path to the resources
-            # spitting out the messages.  If this is not set,
-            # then we get into an infinite loop.
-            @relationship_graph = Puppet::SimpleGraph.new
-
-            # First create the dependency graph
-            self.vertices.each do |vertex|
-                @relationship_graph.add_vertex vertex
-                vertex.builddepends.each do |edge|
-                    @relationship_graph.add_edge(edge)
-                end
-            end
-
-            # Lastly, add in any autorequires
-            @relationship_graph.vertices.each do |vertex|
-                vertex.autorequire(self).each do |edge|
-                    unless @relationship_graph.edge?(edge.source, edge.target) # don't let automatic relationships conflict with manual ones.
-                        unless @relationship_graph.edge?(edge.target, edge.source)
-                            vertex.debug "Autorequiring %s" % [edge.source]
-                            @relationship_graph.add_edge(edge)
-                        else
-                            vertex.debug "Skipping automatic relationship with %s" % (edge.source == vertex ? edge.target : edge.source)
-                        end
-                    end
-                end
-            end
-            @relationship_graph.write_graph(:relationships) if host_config?
-
-            # Then splice in the container information
-            @relationship_graph.splice!(self, Puppet::Type::Component)
-
-            @relationship_graph.write_graph(:expanded_relationships) if host_config?
-        end
-        @relationship_graph
-    end
-
     # Remove the resource from our catalog.  Notice that we also call
     # 'remove' on the resource, at least until resource classes no longer maintain
     # references to the resource instances.
@@ -374,7 +322,6 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
                 @aliases.delete(resource.ref)
             end
             remove_vertex!(resource) if vertex?(resource)
-            @relationship_graph.remove_vertex!(resource) if @relationship_graph and @relationship_graph.vertex?(resource)
             resource.remove
         end
     end

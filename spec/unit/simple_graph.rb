@@ -7,6 +7,12 @@ require File.dirname(__FILE__) + '/../spec_helper'
 require 'puppet/simple_graph'
 
 describe Puppet::SimpleGraph do
+    def add_edges(hash)
+        hash.each do |a,b|
+            @graph.add_edge(a, b)
+        end
+    end
+
     it "should return the number of its vertices as its length" do
         @graph = Puppet::SimpleGraph.new
         @graph.add_vertex("one")
@@ -37,18 +43,39 @@ describe Puppet::SimpleGraph do
         @graph.to_yaml_properties[0].should == "@edges"
     end
 
-    it "should descend dependency edges before containment edges" do
-        @graph = Puppet::SimpleGraph.new
-        @graph.add_edge Puppet::Relationship.new(:top, :cone, :type => :containment)
-        @graph.add_edge Puppet::Relationship.new(:top, :done, :type => :containment)
-        @graph.add_edge Puppet::Relationship.new(:cone, :ctwo, :type => :containment)
-        @graph.add_edge Puppet::Relationship.new(:done, :dtwo, :type => :containment)
-        @graph.add_edge Puppet::Relationship.new(:cone, :done, :type => :dependency)
-        targets = []
-        @graph.walk(:top, :out) do |edge|
-            targets << edge.target unless targets.include?(edge.target)
+    describe "when walking the graph" do
+        it "should descend dependency edges before containment edges" do
+            @graph = Puppet::SimpleGraph.new
+            @graph.add_edge Puppet::Relationship.new(:top, :cone, :type => :containment)
+            @graph.add_edge Puppet::Relationship.new(:top, :done, :type => :containment)
+            @graph.add_edge Puppet::Relationship.new(:cone, :ctwo, :type => :containment)
+            @graph.add_edge Puppet::Relationship.new(:done, :dtwo, :type => :containment)
+            @graph.add_edge Puppet::Relationship.new(:cone, :done, :type => :dependency)
+            targets = []
+            @graph.walk(:top, :out) do |edge|
+                targets << edge.target unless targets.include?(edge.target)
+            end
+            targets.should == [:done, :dtwo, :cone, :ctwo]
         end
-        targets.should == [:done, :dtwo, :cone, :ctwo]
+
+        it "should fail if there are cycles in the graph" do
+            @graph = Puppet::SimpleGraph.new
+            add_edges :one => :two, :two => :one
+            lambda { @graph.walk(:one, :out) { |edge| } }.should raise_error(Puppet::Error)
+        end
+
+        it "should fail if dependencies cause cycles in the graph" do
+            @graph = Puppet::SimpleGraph.new
+            add_edges :one => :two, :two => :three
+            @graph.add_edge Puppet::Relationship.new(:three, :two, :type => :dependency)
+            lambda { @graph.walk(:one, :out) { |edge| } }.should raise_error(Puppet::Error)
+        end
+
+        it "should not fail on non-cyclic conjoined graphs" do
+            @graph = Puppet::SimpleGraph.new
+            add_edges :one => :two, :one => :three, :two => :four, :three => :four
+            lambda { @graph.walk(:one, :out) { |edge| } }.should_not raise_error(Puppet::Error)
+        end
     end
 
     describe "when managing vertices" do
@@ -277,12 +304,6 @@ describe Puppet::SimpleGraph do
             @graph = Puppet::SimpleGraph.new
         end
 
-        def add_edges(hash)
-            hash.each do |a,b|
-                @graph.add_edge(a, b)
-            end
-        end
-
         it "should sort the graph topologically" do
             add_edges :a => :b, :b => :c
             @graph.topsort.should == [:a, :b, :c]
@@ -300,6 +321,8 @@ describe Puppet::SimpleGraph do
 
         it "should fail when a larger tree contains a small cycle" do
             add_edges :a => :b, :b => :a, :c => :a, :d => :c
+            p @graph.topsort
+            @graph.walk(:d, :out) { |edge| p edge }
             proc { @graph.topsort }.should raise_error(Puppet::Error)
         end
 
@@ -422,129 +445,4 @@ describe Puppet::SimpleGraph do
     end
 
     require 'puppet/util/graph'
-
-    class Container
-        include Puppet::Util::Graph
-        include Enumerable
-        attr_accessor :name
-        def each
-            @children.each do |c| yield c end
-        end
-
-        def initialize(name, ary)
-            @name = name
-            @children = ary
-        end
-
-        def push(*ary)
-            ary.each { |c| @children.push(c)}
-        end
-
-        def to_s
-            @name
-        end
-    end
-
-    describe "when splicing the graph" do
-        def container_graph
-            @one = Container.new("one", %w{a b})
-            @two = Container.new("two", ["c", "d"])
-            @three = Container.new("three", ["i", "j"])
-            @middle = Container.new("middle", ["e", "f", @two])
-            @top = Container.new("top", ["g", "h", @middle, @one, @three])
-            @empty = Container.new("empty", [])
-
-            @contgraph = @top.to_graph
-
-            # We have to add the container to the main graph, else it won't
-            # be spliced in the dependency graph.
-            @contgraph.add_vertex(@empty)
-        end
-
-        def dependency_graph
-            @depgraph = Puppet::SimpleGraph.new
-            @contgraph.vertices.each do |v|
-                @depgraph.add_vertex(v)
-            end
-
-            # We have to specify a relationship to our empty container, else it
-            # never makes it into the dep graph in the first place.
-            {@one => @two, "f" => "c", "h" => @middle, "c" => @empty}.each do |source, target|
-                @depgraph.add_edge(source, target, :callback => :refresh)
-            end
-        end
-
-        def splice
-            @depgraph.splice!(@contgraph, Container)
-        end
-
-        before do
-            container_graph
-            dependency_graph
-            splice
-        end
-
-        # This is the real heart of splicing -- replacing all containers in
-        # our relationship and exploding their relationships so that each
-        # relationship to a container gets copied to all of its children.
-        it "should remove all Container objects from the dependency graph" do
-            @depgraph.vertices.find_all { |v| v.is_a?(Container) }.should be_empty
-        end
-
-        it "should add container relationships to contained objects" do
-            @contgraph.leaves(@middle).each do |leaf|
-                @depgraph.should be_edge("h", leaf)
-            end
-        end
-
-        it "should explode container-to-container relationships, making edges between all respective contained objects" do
-            @one.each do |oobj|
-                @two.each do |tobj|
-                    @depgraph.should be_edge(oobj, tobj)
-                end
-            end
-        end
-
-        it "should no longer contain anything but the non-container objects" do
-            @depgraph.vertices.find_all { |v| ! v.is_a?(String) }.should be_empty
-        end
-
-        it "should copy labels" do
-            @depgraph.edges.each do |edge|
-                edge.label.should == {:callback => :refresh}
-            end
-        end
-
-        it "should not add labels to edges that have none" do
-            @depgraph.add_edge(@two, @three)
-            splice
-            @depgraph.edge_label("c", "i").should == {}
-        end
-
-        it "should copy labels over edges that have none" do
-            @depgraph.add_edge("c", @three, {:callback => :refresh})
-            splice
-            # And make sure the label got copied.
-            @depgraph.edge_label("c", "i").should == {:callback => :refresh}
-        end
-
-        it "should not replace a label with a nil label" do
-            # Lastly, add some new label-less edges and make sure the label stays.
-            @depgraph.add_edge(@middle, @three)
-            @depgraph.add_edge("c", @three, {:callback => :refresh})
-            splice
-            @depgraph.edge_label("c", "i").should == {:callback => :refresh}
-        end
-
-        it "should copy labels to all created edges" do
-            @depgraph.add_edge(@middle, @three)
-            @depgraph.add_edge("c", @three, {:callback => :refresh})
-            splice
-            @three.each do |child|
-                edge = Puppet::Relationship.new("c", child)
-                @depgraph.should be_edge(edge.source, edge.target)
-                @depgraph.edge_label(edge.source, edge.target).should == {:callback => :refresh}
-            end
-        end
-    end
 end

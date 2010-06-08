@@ -188,6 +188,41 @@ describe Puppet::Transaction do
         end
     end
 
+    describe "when preparing" do
+        before do
+            @catalog = Puppet::Resource::Catalog.new
+            @transaction = Puppet::Transaction.new(@catalog)
+        end
+
+        it "should generate resources" do
+            @transaction.expects(:generate)
+            @transaction.prepare
+        end
+
+        it "should prefetch resources after generating" do
+            generate = nil
+            prefetch = nil
+            @transaction.expects(:generate).with { |*args| generate = Time.now; true }
+            @transaction.expects(:prefetch).with { |*args| ! generate.nil? }
+            @transaction.prepare
+        end
+
+        it "should add catalog dependency edges" do
+            @catalog.expects(:add_dependency_edges)
+            @transaction.prepare
+        end
+
+        it "should sort the graph" do
+            @catalog.expects(:topsort)
+            @transaction.prepare
+        end
+
+        it "should fail if the graph cannot be sorted" do
+            @catalog.expects(:topsort).raises ArgumentError
+            lambda { @transaction.prepare }.should raise_error(ArgumentError)
+        end
+    end
+
     describe "when generating resources" do
         it "should finish all resources" do
             generator = stub 'generator', :depthfirst? => true, :tags => []

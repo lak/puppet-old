@@ -39,6 +39,21 @@ class Puppet::Transaction
         end
     end
 
+    # Check to see if we should actually allow processing, but this really only
+    # matters when a resource is getting deleted.
+    def allow_processing?(resource, changes)
+        # If a resource is going to be deleted but it still has
+        # dependencies, then don't delete it unless it's implicit or the
+        # dependency is itself being deleted.
+        if resource.purging? and resource.deleting?
+            if deps = catalog.dependents(resource) and ! deps.empty? and deps.detect { |d| ! d.deleting? }
+                resource.warning "%s still depend%s on me -- not purging" %
+                    [deps.collect { |r| r.ref }.join(","), deps.length > 1 ? "":"s"]
+                return false
+            end
+        end
+    end
+
     # Are there any failed resources in this transaction?
     def any_failed?
         report.resource_statuses.values.detect { |status| status.failed? }
@@ -69,10 +84,10 @@ class Puppet::Transaction
             else
                 edge = [resource, gen_child]
             end
-            relationship_graph.add_vertex(gen_child)
+            catalog.add_vertex(gen_child)
 
-            unless relationship_graph.edge?(edge[1], edge[0])
-                relationship_graph.add_edge(*edge)
+            unless catalog.edge?(edge[1], edge[0])
+                catalog.add_edge(*edge)
             else
                 resource.debug "Skipping automatic relationship to %s" % gen_child
             end
@@ -171,7 +186,7 @@ class Puppet::Transaction
         # enough to check the immediate dependencies, which is why we use
         # a tree from the reversed graph.
         found_failed = false
-        relationship_graph.dependencies(resource).each do |dep|
+        catalog.dependencies(resource).each do |dep|
             next unless failed?(dep)
             resource.notice "Dependency #{dep} has failures: #{resource_status(dep).failed}"
             found_failed = true
@@ -278,12 +293,10 @@ class Puppet::Transaction
         # so that any generated resources also get prefetched.
         prefetch()
 
-        # This will throw an error if there are cycles in the graph.
-        @sorted_resources = relationship_graph.topsort
-    end
+        catalog.add_dependency_edges
 
-    def relationship_graph
-        catalog.relationship_graph
+        # This will throw an error if there are cycles in the graph.
+        catalog.topsort
     end
 
     # Send off the transaction report.

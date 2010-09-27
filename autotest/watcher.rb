@@ -47,7 +47,7 @@ end
 
 def file2specs(file)
   %w{spec/unit spec/integration}.collect { |d|
-    file.sub('lib/puppet', d)
+    file.sub('lib/puppet', d).sub('.rb', '_spec.rb')
   }.find_all { |f|
     File.exist?(f)
   }

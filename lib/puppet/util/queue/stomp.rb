@@ -29,7 +29,7 @@ class Puppet::Util::Queue::Stomp
   end
 
   def send_message(target, msg)
-    stomp_client.send(stompify_target(target), msg, :persistent => true)
+    stomp_client.publish(stompify_target(target), msg, :persistent => true)
   end
 
   def subscribe(target)

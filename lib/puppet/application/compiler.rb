@@ -1,6 +1,6 @@
 require 'puppet/application'
 
-class Puppet::Application::Master < Puppet::Application
+class Puppet::Application::Compiler < Puppet::Application
 
   should_parse_config
   run_mode :master
@@ -63,24 +63,10 @@ class Puppet::Application::Master < Puppet::Application
     exit(0)
   end
 
-  def parseonly
-    begin
-      Puppet::Node::Environment.new(Puppet[:environment]).known_resource_types
-    rescue => detail
-      Puppet.err detail
-      exit 1
-    end
-    exit(0)
-  end
-
   def main
     require 'etc'
     require 'puppet/file_serving/content'
     require 'puppet/file_serving/metadata'
-
-    xmlrpc_handlers = [:Status, :FileServer, :Master, :Report, :Filebucket]
-
-    xmlrpc_handlers << :CA if Puppet[:ca]
 
     # Make sure we've got a localhost ssl cert
     Puppet::SSL::Host.localhost
@@ -99,22 +85,17 @@ class Puppet::Application::Master < Puppet::Application
       end
     end
 
-    unless options[:rack]
-      require 'puppet/network/server'
-      @daemon.server = Puppet::Network::Server.new(:xmlrpc_handlers => xmlrpc_handlers)
-      @daemon.daemonize if Puppet[:daemonize]
-    else
-      require 'puppet/network/http/rack'
-      @app = Puppet::Network::HTTP::Rack.new(:xmlrpc_handlers => xmlrpc_handlers, :protocols => [:rest, :xmlrpc])
-    end
+    @daemon.daemonize if Puppet[:daemonize]
 
-    Puppet.notice "Starting Puppet master version #{Puppet.version}"
+    Puppet.notice "Starting Puppet compiler daemon version #{Puppet.version}"
 
-    unless options[:rack]
-      @daemon.start
-    else
-      return @app
+    queue = "puppet.catalog_request"
+    Puppet::Resource::Catalog::Request.indirection.terminus.client.subscribe(queue) do |pson|
+      # We've received a serialized request object
+      request = Puppet::Resource::Catalog::Request.convert_from(:pson, pson)
+      request.execute
     end
+    Thread.list.each { |thread| thread.join }
   end
 
   def setup
@@ -134,6 +115,7 @@ class Puppet::Application::Master < Puppet::Application
 
     require 'puppet/resource/catalog/request'
     Puppet::Resource::Catalog::Request.terminus_class = :queue
+    Puppet[:facts_terminus] = :yaml
     Puppet[:catalog_terminus] = :queue
 
     Puppet::Util::Log.newdestination(:syslog) unless options[:setdest]

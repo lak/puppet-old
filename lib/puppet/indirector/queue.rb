@@ -22,6 +22,10 @@ class Puppet::Indirector::Queue < Puppet::Indirector::Terminus
   extend ::Puppet::Util::Queue
   include Puppet::Util
 
+  def self.per_request?
+    false
+  end
+
   def initialize(*args)
     super
     raise ArgumentError, "Queueing requires pson support" unless Puppet.features.pson?
@@ -35,8 +39,9 @@ class Puppet::Indirector::Queue < Puppet::Indirector::Terminus
   # Place the request on the queue
   def save(request)
       result = nil
+      pson = request.instance.to_pson.to_pson
       benchmark :info, "Queued #{indirection.name} for #{request.key}" do
-        result = client.send_message(queue, request.instance.render(:pson))
+        result = client.send_message(queue(request), pson)
       end
       result
   rescue => detail
@@ -47,8 +52,14 @@ class Puppet::Indirector::Queue < Puppet::Indirector::Terminus
     indirection_name
   end
 
-  def queue
-    self.class.queue
+  def queue_name(*ary)
+    ary.collect { |i| i.to_s }.join(".")
+  end
+
+  def queue(request)
+    args = ["puppet", self.class.indirection_name]
+    args << request.key if self.class.per_request?
+    queue_name(*args)
   end
 
   # Returns the singleton queue client object.

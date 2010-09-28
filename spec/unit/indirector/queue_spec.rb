@@ -51,14 +51,27 @@ describe Puppet::Indirector::Queue do
     @request = stub 'request', :key => :me, :instance => @subject
   end
 
+  it "should default to not being per-request" do
+    @store.class.should_not be_per_request
+  end
+
   it "should require PSON" do
     Puppet.features.expects(:pson?).returns false
 
     lambda { @store_class.new }.should raise_error(ArgumentError)
   end
 
+  it "should use a queue name composed of 'puppet' and the indirection name" do
+    @store.class.expects(:per_request?).returns false
+    @store.queue(@request).should == "puppet.my_queue"
+  end
+
+  it "should add the request key when the queue is per-request" do
+    @store.class.expects(:per_request?).returns true
+    @store.queue(@request).should == "puppet.my_queue.me"
+  end
+
   it 'should use the correct client type and queue' do
-    @store.queue.should == :my_queue
     @store.client.should be_an_instance_of(Puppet::Indirector::Queue::TestClient)
   end
 
@@ -72,7 +85,7 @@ describe Puppet::Indirector::Queue do
     it "should send the rendered message to the appropriate queue on the client" do
       @subject.expects(:render).returns "mypson"
 
-      @store.client.expects(:send_message).with(:my_queue, "mypson")
+      @store.client.expects(:send_message).with(@store.queue(@request), "mypson")
 
       @store.save(@request)
     end

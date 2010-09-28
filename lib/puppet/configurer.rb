@@ -89,7 +89,7 @@ class Puppet::Configurer
 
   # Get the remote catalog, yo.  Returns nil if no catalog can be found.
   def retrieve_catalog
-    if Puppet::Resource::Catalog.indirection.terminus_class == :rest
+    if [:rest].include?(Puppet::Resource::Catalog.indirection.terminus_class)
       # This is a bit complicated.  We need the serialized and escaped facts,
       # and we need to know which format they're encoded in.  Thus, we
       # get a hash with both of these pieces of information.
@@ -225,10 +225,30 @@ class Puppet::Configurer
 
   def retrieve_new_catalog(fact_options)
     result = nil
-    @duration = thinmark do
-      result = Puppet::Resource::Catalog.find(Puppet[:certname], fact_options.merge(:ignore_cache => true))
+    facts = nil
+    fact_time = thinmark do
+      facts = find_facts.values
     end
-    result
+    Puppet.info "Found facts in #{'%0.2f' % fact_time} seconds"
+
+    request = Puppet::Resource::Catalog::Request.new(Puppet[:certname], facts)
+    request_time = thinmark do
+      request.save
+    end
+    Puppet.info "Requested catalog in #{'%0.2f' % request_time} seconds"
+
+    @duration = thinmark do
+      Puppet::Resource::Catalog::Request.indirection.terminus(:queue).client.subscribe("puppet.catalog.#{Puppet[:certname]}") do |pson|
+        # We've received a serialized catalog object
+        result = Puppet::Resource::Catalog.convert_from(:pson, pson)
+      end
+    end
+    count = 0
+    until count > 10 do
+      count += 1
+      return result if result
+      sleep 1
+    end
   rescue SystemExit,NoMemoryError
     raise
   rescue Exception => detail

@@ -237,10 +237,13 @@ class Puppet::Application::Agent < Puppet::Application
     # Override the default.
     Puppet[:facts_terminus] = :facter
 
+    require 'puppet/resource/catalog/request'
     Puppet::Resource::Catalog.cache_class = :yaml
+    Puppet::Resource::Catalog::Request.terminus_class = :queue
+    Puppet[:catalog_terminus] = :queue
 
 
-    # We need tomake the client either way, we just don't start it
+    # We need to make the client either way, we just don't start it
     # if --no-client is set.
     require 'puppet/agent'
     require 'puppet/configurer'

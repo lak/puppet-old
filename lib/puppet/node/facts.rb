@@ -16,6 +16,21 @@ class Puppet::Node::Facts
     end
   end
 
+  def self.from_pson(pson)
+    raise ArgumentError, "No name provided in pson data" unless name = pson['name']
+    raise ArgumentError, "No values provided in pson data" unless values = pson['values']
+
+    new(name, values)
+  end
+
+  def to_pson(*args)
+    result = {}
+    result['name'] = name
+    result['values'] = values
+
+    result.to_pson(*args)
+  end
+
   indirects :facts, :terminus_setting => :facts_terminus, :extend => NodeExpirer
 
   attr_accessor :name, :values

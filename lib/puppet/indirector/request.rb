@@ -1,23 +1,63 @@
 require 'cgi'
 require 'uri'
 require 'puppet/indirector'
+require 'puppet/network/format_handler'
 
 # This class encapsulates all of the information you need to make an
 # Indirection call, and as a a result also handles REST calls.  It's somewhat
 # analogous to an HTTP Request object, except tuned for our Indirector.
 class Puppet::Indirector::Request
-  attr_accessor :key, :method, :options, :instance, :node, :ip, :authenticated, :ignore_cache, :ignore_terminus
+  extend Puppet::Network::FormatHandler
+
+  attr_accessor :key, :method, :options, :instance, :node, :ip, :authenticated, :ignore_cache, :ignore_terminus, :start
 
   attr_accessor :server, :port, :uri, :protocol
 
   attr_reader :indirection_name
 
-  OPTION_ATTRIBUTES = [:ip, :node, :authenticated, :ignore_terminus, :ignore_cache, :instance, :environment]
+  OPTION_ATTRIBUTES = [:ip, :node, :authenticated, :ignore_terminus, :ignore_cache, :instance, :environment, :synchronous]
+
+  def self.from_pson(pson)
+    raise ArgumentError, "No indirection name provided in pson data" unless indirection_name = pson['indirection_name']
+    raise ArgumentError, "No method name provided in pson data" unless method = pson['method']
+    raise ArgumentError, "No key provided in pson data" unless key = pson['key']
+
+    request = new(indirection_name, method, key)
+
+    pson['attributes'].each do |attr, value|
+      request.send(attr.to_s + '=', value)
+    end
+
+    if instance = pson['instance']
+      request.instance = instance
+    end
+
+    request
+  end
+
+  def to_pson(*args)
+    result = {}
+    result['indirection_name'] = indirection_name
+    result['method'] = method
+    result['key'] = key
+    result['attributes'] = {}
+    OPTION_ATTRIBUTES.each do |key, value|
+      result['attributes'][key] = value unless value.nil?
+    end
+    result['instance'] = instance.to_pson if instance
+
+    result.to_pson(*args)
+  end
 
   # Is this an authenticated request?
   def authenticated?
     # Double negative, so we just get true or false
     ! ! authenticated
+  end
+
+  def synchronous?
+    # Double negative, so we just get true or false
+    ! ! synchronous
   end
 
   def environment
@@ -49,7 +89,18 @@ class Puppet::Indirector::Request
     ignore_terminus
   end
 
+  def execute(indirection)
+    real_method = "old_" + method.to_s
+    indirection.send(real_method, self)
+  rescue => details
+    puts details.backtrace
+    Puppet.err "#{method} failed for #{self}: #{details}"
+  end
+
   def initialize(indirection_name, method, key_or_instance, options_or_instance = {})
+    # default to a synchronous request
+    @synchronous = true
+
     if options_or_instance.is_a? Hash
       options = options_or_instance
       @instance = nil

@@ -28,15 +28,23 @@ class Puppet::Util::Queue::Stomp
     end
   end
 
-  def send_message(target, msg)
-    stomp_client.send(stompify_target(target), msg, :persistent => true)
+  def publish(target, msg)
+    stomp_client.publish(stompify_target(target), msg, :persistent => true)
   end
 
   def subscribe(target)
     stomp_client.subscribe(stompify_target(target), :ack => :client) do |stomp_message|
-      yield(stomp_message.body)
-      stomp_client.acknowledge(stomp_message)
+      begin
+        yield(stomp_message.body)
+        stomp_client.acknowledge(stomp_message)
+      rescue => detail
+        puts detail.backtrace if Puppet[:trace]
+        Puppet.warning "Got exception processing message on #{target}: #{detail}"
+      end
     end
+  rescue => detail
+    puts detail.backtrace if Puppet[:trace]
+    Puppet.warning "Got exception subscribing to #{target}: #{detail}"
   end
 
   def stompify_target(target)

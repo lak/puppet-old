@@ -2,6 +2,7 @@ require 'puppet/util/docs'
 require 'puppet/indirector/envelope'
 require 'puppet/indirector/request'
 require 'puppet/util/cacher'
+require 'puppet/util/queue'
 
 # The class that connects functional classes with their different collection
 # back-ends.  Each indirection has a set of associated terminus classes,
@@ -9,6 +10,8 @@ require 'puppet/util/cacher'
 class Puppet::Indirector::Indirection
   include Puppet::Util::Cacher
   include Puppet::Util::Docs
+  include Puppet::Util::Queue
+  include Puppet::Util
 
   @@indirections = []
 
@@ -92,6 +95,9 @@ class Puppet::Indirector::Indirection
     @cache_class = nil
     @terminus_class = nil
 
+    @queue = []
+    @responses = {}
+
     raise(ArgumentError, "Indirection #{@name} is already defined") if @@indirections.find { |i| i.name == @name }
     @@indirections << self
 
@@ -108,6 +114,8 @@ class Puppet::Indirector::Indirection
         raise ArgumentError, "#{name} is not a valid Indirection parameter"
       end
     end
+
+    look_for_requests()
   end
 
   # Set up our request object.
@@ -177,7 +185,40 @@ class Puppet::Indirector::Indirection
   # Search for an instance in the appropriate terminus, caching the
   # results if caching is configured..
   def find(key, *args)
-    request = request(:find, key, *args)
+    handle_request(:find, key, *args)
+  end
+
+  # Remove something via the terminus.
+  def destroy(key, *args)
+    handle_request(:destroy, key, *args)
+  end
+
+  # Search for more than one instance.  Should always return an array.
+  def search(key, *args)
+    handle_request(:search, key, *args)
+  end
+
+  # Save the instance in the appropriate terminus.  This method is
+  # normally an instance method on the indirected class.
+  def save(key, instance = nil)
+    handle_request(:save, key, instance)
+  end
+
+  def queue_per_request?
+    true
+  end
+
+  def queue
+    queue_name "puppet", name
+  end
+
+  def response_queue
+    queue_name "puppet", name, :response
+  end
+
+  # Search for an instance in the appropriate terminus, caching the
+  # results if caching is configured..
+  def old_find(request)
     terminus = prepare(request)
 
     begin
@@ -216,8 +257,7 @@ class Puppet::Indirector::Indirection
   end
 
   # Remove something via the terminus.
-  def destroy(key, *args)
-    request = request(:destroy, key, *args)
+  def old_destroy(request)
     terminus = prepare(request)
 
     result = terminus.destroy(request)
@@ -231,8 +271,7 @@ class Puppet::Indirector::Indirection
   end
 
   # Search for more than one instance.  Should always return an array.
-  def search(key, *args)
-    request = request(:search, key, *args)
+  def old_search(request)
     terminus = prepare(request)
 
     if result = terminus.search(request)
@@ -246,8 +285,7 @@ class Puppet::Indirector::Indirection
 
   # Save the instance in the appropriate terminus.  This method is
   # normally an instance method on the indirected class.
-  def save(key, instance = nil)
-    request = request(:save, key, instance)
+  def old_save(request)
     terminus = prepare(request)
 
     result = terminus.save(request)
@@ -259,6 +297,92 @@ class Puppet::Indirector::Indirection
   end
 
   private
+
+  def queue_client
+    @queue_client ||= client_class.new
+  end
+
+  def queue_name(*ary)
+    ary.collect { |i| i.to_s }.join(".")
+  end
+
+  def request_expired?(request)
+    request.start ||= Time.now
+
+    return (Time.now - request.start).to_i > 100
+    #return (Time.now - request.start).to_i > request.ttl
+  end
+
+  def handle_request(method, key, *args)
+    request = request(method, key, *args)
+
+    queue_request(request)
+
+    sync_look_for_response(request)
+  end
+
+  def look_for_requests
+    #Puppet.err "Subscribing to #{queue} for #{name}"
+    queue_client.subscribe(queue) do |pson|
+      request = Puppet::Indirector::Request.convert_from(:pson, pson)
+      benchmark :notice, "Processed request #{request}" do
+        process_request(request)
+      end
+    end
+  end
+
+  def sync_look_for_response(request)
+    # Set up the callback for processing requests.
+    result = nil
+    queue_client.subscribe(response_queue) do |pson|
+      begin
+        result = model.convert_from(:pson, pson)
+      rescue => details
+        puts details.backtrace
+        Puppet.warning "Failed to convert pson to #{name}: #{details}"
+      end
+    end
+
+    until request_expired?(request)
+      break if result
+      Puppet.debug "Sleeping for result from #{request}/#{request.object_id}"
+      sleep 0.1
+    end
+
+    raise "Response from #{request} timed out" unless result
+
+    if result.request_id.nil?
+      #Puppet.warning "No request ID for instance of #{model}"
+      return result
+    end
+
+    if result.request_id != request.object_id
+      raise "Got wrong response for #{request}: #{result.request_id} vs #{request.object_id}"
+    end
+
+    result
+  end
+
+  def queue_request(request)
+    benchmark :info, "Queued request #{request} to #{queue}" do
+      queue_client.publish(queue, request.render(:pson))
+    end
+  end
+
+  def process_request(request)
+    unless result = request.execute(self)
+      raise "Could not get result from #{request}"
+    end
+    result.request_id = request.object_id
+
+    benchmark :info, "Queued response for #{request} to #{response_queue}" do
+      queue_client.publish(response_queue, result.render(:pson))
+    end
+  rescue => details
+    puts details.backtrace
+    # do something with exceptions
+    Puppet.err "Something failed! #{details}"
+  end
 
   # Check authorization if there's a hook available; fail if there is one
   # and it returns false.
@@ -301,6 +425,10 @@ class Puppet::Indirector::Indirection
       raise ArgumentError, "Could not find terminus #{terminus_class} for indirection #{self.name}"
     end
     klass.new
+  end
+
+  def sync
+    Puppet::Util.sync(name).synchronize(Sync::EX) { yield }
   end
 
   # Cache our terminus instances indefinitely, but make it easy to clean them up.

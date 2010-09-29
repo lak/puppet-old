@@ -49,6 +49,8 @@ class Puppet::Resource::Catalog::Compiler < Puppet::Indirector::Code
   def initialize
     set_server_facts
     setup_database_backend if Puppet[:storeconfigs]
+
+    @node_source = Puppet::Util::LastKnownGood.new(Puppet::Node, :yaml)
   end
 
   # Is our compiler part of a network, or are we just local?
@@ -87,7 +89,7 @@ class Puppet::Resource::Catalog::Compiler < Puppet::Indirector::Code
   # Turn our host name into a node object.
   def find_node(name)
     begin
-      return nil unless node = Puppet::Node.find(name)
+      return nil unless node = @node_source.find(name)
     rescue => detail
       puts detail.backtrace if Puppet[:trace]
       raise Puppet::Error, "Failed when searching for node #{name}: #{detail}"

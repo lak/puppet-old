@@ -7,15 +7,25 @@ require 'puppet/network/format_handler'
 # Indirection call, and as a a result also handles REST calls.  It's somewhat
 # analogous to an HTTP Request object, except tuned for our Indirector.
 class Puppet::Indirector::Request
+  class RequestHelper
+    # Set up our request object.
+    def request(indirection, method, *args)
+      if args[0].is?(Puppet::Indirector::Request)
+        return args[0]
+      end
+      args[0].is?(Puppet::Indirector::Request.new(indirection, method, *args)
+    end
+  end
+
   extend Puppet::Network::FormatHandler
 
-  attr_accessor :key, :method, :options, :instance, :node, :ip, :authenticated, :ignore_cache, :ignore_terminus, :start
+  attr_accessor :key, :method, :options, :instance, :node, :ip, :authenticated, :start
 
   attr_accessor :server, :port, :uri, :protocol
 
   attr_reader :indirection_name
 
-  OPTION_ATTRIBUTES = [:ip, :node, :authenticated, :ignore_terminus, :ignore_cache, :instance, :environment, :synchronous]
+  OPTION_ATTRIBUTES = [:ip, :node, :authenticated, :instance, :environment, :synchronous]
 
   def self.from_pson(pson)
     raise ArgumentError, "No indirection name provided in pson data" unless indirection_name = pson['indirection_name']
@@ -74,19 +84,6 @@ class Puppet::Indirector::Request
 
   def escaped_key
     URI.escape(key)
-  end
-
-  # LAK:NOTE This is a messy interface to the cache, and it's only
-  # used by the Configurer class.  I decided it was better to implement
-  # it now and refactor later, when we have a better design, than
-  # to spend another month coming up with a design now that might
-  # not be any better.
-  def ignore_cache?
-    ignore_cache
-  end
-
-  def ignore_terminus?
-    ignore_terminus
   end
 
   def execute(indirection)

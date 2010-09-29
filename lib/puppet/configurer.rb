@@ -70,6 +70,8 @@ class Puppet::Configurer
     self.class.instance = self
     @running = false
     @splayed = false
+    
+    @catalog_source = Puppet::Util::LastKnownGood.new(Puppet::Resource::Catalog, :yaml)
   end
 
   def initialize_report
@@ -213,7 +215,7 @@ class Puppet::Configurer
   def retrieve_catalog_from_cache(fact_options)
     result = nil
     @duration = thinmark do
-      result = Puppet::Resource::Catalog.find(Puppet[:certname], fact_options.merge(:ignore_terminus => true))
+      result = @catalog_source.find_in_cache(Puppet[:certname], fact_options)
     end
     Puppet.notice "Using cached catalog"
     result
@@ -226,7 +228,7 @@ class Puppet::Configurer
   def retrieve_new_catalog(fact_options)
     result = nil
     @duration = thinmark do
-      result = Puppet::Resource::Catalog.find(Puppet[:certname], fact_options.merge(:ignore_cache => true))
+      result = Puppet::Resource::Catalog.find(Puppet[:certname], fact_options)
     end
     result
   rescue SystemExit,NoMemoryError

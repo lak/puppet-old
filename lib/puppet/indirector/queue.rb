@@ -19,7 +19,7 @@ require 'puppet/util'
 # client library to handle queue creation as necessary (for a number of popular queuing solutions, queue
 # creation is automatic and not a concern).
 class Puppet::Indirector::Queue < Puppet::Indirector::Terminus
-  extend ::Puppet::Util::Queue
+  include Puppet::Util::Queue
   include Puppet::Util
 
   def initialize(*args)
@@ -27,55 +27,85 @@ class Puppet::Indirector::Queue < Puppet::Indirector::Terminus
     raise ArgumentError, "Queueing requires pson support" unless Puppet.features.pson?
   end
 
-  # Queue has no idiomatic "find"
+  # Do a synchronous request on the queue
   def find(request)
-    nil
+      benchmark :info, "Queued request for #{indirection.name} for #{request.key}" do
+        client.publish(request_queue, request.to_pson)
+      end
+
+      result = nil
+      benchmark :notice, "Received response for #{request}" do
+        result = sync_look_for_response(request)
+      end
+      result
+  rescue => detail
+      puts detail.backtrace if Puppet[:trace]
+      raise Puppet::Error, "Could not look for response to #{request} queue: #{detail}"
   end
 
   # Place the request on the queue
   def save(request)
       result = nil
       benchmark :info, "Queued #{indirection.name} for #{request.key}" do
-        result = client.send_message(queue, request.instance.render(:pson))
+        result = client.publish(response_queue, request.instance.render(:pson))
       end
       result
   rescue => detail
+      puts detail.backtrace if Puppet[:trace]
       raise Puppet::Error, "Could not write #{request.key} to queue: #{detail}\nInstance::#{request.instance}\n client : #{client}"
   end
 
-  def self.queue
-    indirection_name
+  def queue_name(*ary)
+    ary.collect { |i| i.to_s }.join(".")
   end
 
-  def queue
-    self.class.queue
+  def request_queue
+    queue_name "puppet", self.class.indirection_name, :request
   end
 
-  # Returns the singleton queue client object.
-  def client
-    self.class.client
+  def response_queue
+    queue_name "puppet", self.class.indirection_name, :response
   end
 
-  # converts the _message_ from deserialized format to an actual model instance.
-  def self.intern(message)
+  private
+
+  def request_expired?(request)
+    request.start ||= Time.now
+
+    return (Time.now - request.start).to_i > 20
+  end
+  
+
+  def sync_look_for_response(request)
+    # Set up the callback for processing requests.
     result = nil
-    benchmark :info, "Loaded queued #{indirection.name}" do
-      result = model.convert_from(:pson, message)
-    end
-    result
-  end
-
-  # Provides queue subscription functionality; for a given indirection, use this method on the terminus
-  # to subscribe to the indirection-specific queue.  Your _block_ will be executed per new indirection
-  # model received from the queue, with _obj_ being the model instance.
-  def self.subscribe
-    client.subscribe(queue) do |msg|
+    client.subscribe(response_queue) do |pson|
       begin
-        yield(self.intern(msg))
-      rescue => detail
-        puts detail.backtrace if Puppet[:trace]
-        Puppet.err "Error occured with subscription to queue #{queue} for indirection #{indirection_name}: #{detail}"
+        result = indirection.model.convert_from(:pson, pson)
+      rescue => details
+        puts details.backtrace
+        Puppet.warning "Failed to convert pson to #{name}: #{details}"
       end
     end
+
+    until request_expired?(request)
+      break if result
+      Puppet.debug "Sleeping for result from #{request}/#{request.object_id}"
+      sleep 0.5
+    end
+
+    raise "Response from #{request} timed out" unless result
+
+    return result
+    if result.request_id.nil?
+      Puppet.warning "No request ID for instance of #{model}"
+      return result
+    end
+
+    if result.request_id != request.object_id
+      raise "Got wrong response for #{request}: #{result.request_id} vs #{request.object_id}"
+    end
+
+    result
   end
 end

@@ -70,6 +70,9 @@ class Puppet::Configurer
     self.class.instance = self
     @running = false
     @splayed = false
+
+    @cache = Puppet::Indirector::Route.new(:catalog, :yaml)
+    @compiler = Puppet::Indirector::Route.new(:catalog, Puppet[:catalog_source])
   end
 
   def initialize_report
@@ -89,7 +92,7 @@ class Puppet::Configurer
 
   # Get the remote catalog, yo.  Returns nil if no catalog can be found.
   def retrieve_catalog
-    if Puppet::Resource::Catalog.indirection.terminus_class == :rest
+    if @compiler.terminus_class == :rest
       # This is a bit complicated.  We need the serialized and escaped facts,
       # and we need to know which format they're encoded in.  Thus, we
       # get a hash with both of these pieces of information.
@@ -213,7 +216,7 @@ class Puppet::Configurer
   def retrieve_catalog_from_cache(fact_options)
     result = nil
     @duration = thinmark do
-      result = Puppet::Resource::Catalog.find(Puppet[:certname], fact_options.merge(:ignore_terminus => true))
+      result = @cache.find(Puppet[:certname], fact_options)
     end
     Puppet.notice "Using cached catalog"
     result
@@ -226,7 +229,7 @@ class Puppet::Configurer
   def retrieve_new_catalog(fact_options)
     result = nil
     @duration = thinmark do
-      result = Puppet::Resource::Catalog.find(Puppet[:certname], fact_options.merge(:ignore_cache => true))
+      result = @compiler.find(Puppet[:certname], fact_options)
     end
     result
   rescue SystemExit,NoMemoryError

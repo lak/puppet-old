@@ -1,3 +1,5 @@
+require 'puppet/indirector/code'
+
 class Puppet::Resource::Ral < Puppet::Indirector::Code
   def find( request )
     # find by name

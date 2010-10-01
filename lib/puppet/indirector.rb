@@ -34,34 +34,38 @@ module Puppet::Indirector
     attr_reader :indirection
 
     def cache_class=(klass)
-      indirection.cache_class = klass
+      default_route.cache_class = klass
+    end
+
+    def default_route
+      indirection.default_route
     end
 
     def terminus_class=(klass)
-      indirection.terminus_class = klass
+      default_route.terminus_class = klass
     end
 
     # Expire any cached instance.
     def expire(*args)
-      indirection.expire(*args)
+      default_route.expire(*args)
     end
 
     def find(*args)
-      indirection.find(*args)
+      default_route.find(*args)
     end
 
     def destroy(*args)
-      indirection.destroy(*args)
+      default_route.destroy(*args)
     end
 
     def search(*args)
-      indirection.search(*args)
+      default_route.search(*args)
     end
   end
 
   module InstanceMethods
     def save(key = nil)
-      self.class.indirection.save key, self
+      self.class.indirection.default_route.save key, self
     end
   end
 end

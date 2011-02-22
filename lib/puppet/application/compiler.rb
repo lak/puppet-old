@@ -72,7 +72,7 @@ class Puppet::Application::Compiler < Puppet::Application
     catalog.request_id = request.request_id
 
     # This needs to go to the queue for this system to work.
-    catalog.save
+    Puppet::Resource::Catalog.indirection.save(catalog)
   end
 
   def main
@@ -141,7 +141,7 @@ class Puppet::Application::Compiler < Puppet::Application
     Puppet.settings.use :main, :master, :ssl
 
     # Cache our nodes in yaml.  Currently not configurable.
-    Puppet::Node.cache_class = :yaml
+    Puppet::Node.indirection.cache_class = :yaml
 
     # Configure all of the SSL stuff.
     if Puppet::SSL::CertificateAuthority.ca?

@@ -1,29 +1,21 @@
 require 'puppet/application'
 
 class Puppet::Application::Compiler < Puppet::Application
-
   should_parse_config
   run_mode :master
 
   option("--debug", "-d")
   option("--verbose", "-v")
 
-  # internal option, only to be used by ext/rack/config.ru
-  option("--rack")
-
-  option("--compile host",  "-c host") do |arg|
-    options[:node] = arg
+  option("--compile_terminus terminus",  "-t term") do |arg|
+    options[:compile_terminus] = arg
   end
 
-  option("--logdest DEST",  "-l DEST") do |arg|
-    begin
-      Puppet::Util::Log.newdestination(arg)
-      options[:setdest] = true
-    rescue => detail
-      puts detail.backtrace if Puppet[:debug]
-      $stderr.puts detail.to_s
-    end
+  option("--queue_terminus terminus",  "-q term") do |arg|
+    options[:queue_terminus] = arg
   end
+
+  attr_accessor :request_queue, :response_queue, :queue_client
 
   def preinit
     trap(:INT) do
@@ -38,54 +30,32 @@ class Puppet::Application::Compiler < Puppet::Application
   end
 
   def run_command
-    if options[:node]
-      compile
-    elsif Puppet[:parseonly]
-      parseonly
-    else
-      main
-    end
-  end
-
-  def compile
-    Puppet::Util::Log.newdestination :console
-    raise ArgumentError, "Cannot render compiled catalogs without pson support" unless Puppet.features.pson?
-    begin
-      unless catalog = Puppet::Resource::Catalog.find(options[:node])
-        raise "Could not compile catalog for #{options[:node]}"
-      end
-
-      jj catalog.to_resource
-    rescue => detail
-      $stderr.puts detail
-      exit(30)
-    end
-    exit(0)
+    process_queue
   end
 
   def execute_request(request)
-    Puppet.warning "Trying to execute request for #{request}"
+    Puppet.info "Processing request for #{request}"
 
-    catalog = Puppet::Resource::Catalog.indirection.terminus(:compiler).find(request)
+    begin
+      catalog = Puppet::Resource::Catalog.indirection.terminus(options[:compile_terminus]).find(request)
+    rescue => detail
+      puts detail.backtrace if Puppet[:trace]
+      Puppet.err "Could not retrieve catalog for #{request.key}: #{detail}"
+      queue_client.publish(response_queue, "Error: #{detail}")
+    end
 
-    catalog.extend(Puppet::Indirector::Envelope)
-    catalog.request_id = request.request_id
+    if catalog
+      catalog.extend(Puppet::Indirector::Envelope)
+      catalog.request_id = request.request_id
 
-    # This needs to go to the queue for this system to work.
-    Puppet::Resource::Catalog.indirection.save(catalog)
+      save(request, catalog)
+    end
   end
 
-  def main
+  def process_queue
     require 'etc'
     require 'puppet/file_serving/content'
     require 'puppet/file_serving/metadata'
-
-    # Make sure we've got a localhost ssl cert
-    Puppet::SSL::Host.localhost
-
-    # And now configure our server to *only* hit the CA for data, because that's
-    # all it will have write access to.
-    Puppet::SSL::Host.ca_location = :only if Puppet::SSL::CertificateAuthority.ca?
 
     if Puppet.features.root?
       begin
@@ -103,7 +73,7 @@ class Puppet::Application::Compiler < Puppet::Application
 
     queue = Puppet::Resource::Catalog.indirection.terminus.request_queue
 
-    Puppet::Resource::Catalog.indirection.terminus.client.subscribe(queue) do |pson|
+    queue_client.subscribe(queue) do |pson|
       begin
         # We've received a serialized request object
         request = Puppet::Indirector::Request.convert_from(:pson, pson)
@@ -117,6 +87,11 @@ class Puppet::Application::Compiler < Puppet::Application
   end
 
   def setup
+    options[:compile_terminus] ||= :compiler
+    options[:queue_terminus] ||= :queue
+
+    Puppet::Resource::Catalog.indirection.terminus(options[:compile_terminus])
+
     # Handle the logging settings.
     if options[:debug] or options[:verbose]
       if options[:debug]
@@ -125,13 +100,12 @@ class Puppet::Application::Compiler < Puppet::Application
         Puppet::Util::Log.level = :info
       end
 
-      unless Puppet[:daemonize] or options[:rack]
+      unless Puppet[:daemonize]
         Puppet::Util::Log.newdestination(:console)
         options[:setdest] = true
       end
     end
 
-    Puppet[:facts_terminus] = :yaml
     Puppet[:catalog_terminus] = :queue
 
     Puppet::Util::Log.newdestination(:syslog) unless options[:setdest]
@@ -151,5 +125,27 @@ class Puppet::Application::Compiler < Puppet::Application
     else
       Puppet::SSL::Host.ca_location = :none
     end
+
+    # And now configure our server to *only* hit the CA for data, because that's
+    # all it will have write access to.
+    Puppet::SSL::Host.ca_location = :only if Puppet::SSL::CertificateAuthority.ca?
+
+    # Make sure we've got a localhost ssl cert
+    Puppet::SSL::Host.localhost
+
+    @request_queue = Puppet::Resource::Catalog.indirection.terminus(:queue).request_queue
+    @response_queue = Puppet::Resource::Catalog.indirection.terminus(:queue).response_queue
+    @queue_client = Puppet::Resource::Catalog.indirection.terminus.client
+  end
+
+  def save(request, instance)
+      result = nil
+      benchmark :info, "Queued catalog for '#{request.key}'" do
+        result = queue_client.publish(response_queue, instance.render(:pson))
+      end
+      result
+  rescue => detail
+      puts detail.backtrace if Puppet[:trace]
+      raise Puppet::Error, "Could not write #{request.key} to queue: #{detail}\nInstance::#{request.instance}\n client : #{queue_client}"
   end
 end

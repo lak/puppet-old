@@ -79,21 +79,28 @@ class Puppet::Indirector::Queue < Puppet::Indirector::Terminus
   def sync_look_for_response(request)
     # Set up the callback for processing requests.
     result = nil
+    error = nil
     client.subscribe(response_queue) do |pson|
-      begin
-        result = indirection.model.convert_from(:pson, pson)
-      rescue => details
-        puts details.backtrace
-        Puppet.warning "Failed to convert pson to #{name}: #{details}"
+      if pson =~ /^Error: (.+)/
+        error = $1
+      else
+        begin
+          result = indirection.model.convert_from(:pson, pson)
+        rescue => details
+          puts details.backtrace
+          Puppet.warning "Failed to convert pson to #{name}: #{details}"
+        end
       end
     end
 
+    # Sleep until the 'subscribe' block fires or we time out
     until request_expired?(request)
-      break if result
+      break if result or error
       Puppet.debug "Sleeping for result from #{request}/#{request.object_id}"
       sleep 0.5
     end
 
+    raise "Could not retrieve catalog: #{error}" if error
     raise "Response from #{request} timed out" unless result
 
     return result

@@ -154,6 +154,7 @@ module Puppet
             break
           end
         rescue => detail
+          puts detail.backtrace if Puppet[:trace]
           fail detail, "Could not retrieve file metadata for #{source}: #{detail}"
         end
       end

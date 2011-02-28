@@ -34,8 +34,6 @@ class Puppet::Application::Compiler < Puppet::Application
   end
 
   def execute_request(request)
-    Puppet.info "Processing request for #{request}"
-
     begin
       catalog = Puppet::Resource::Catalog.indirection.terminus(options[:compile_terminus]).find(request)
     rescue => detail
@@ -77,7 +75,9 @@ class Puppet::Application::Compiler < Puppet::Application
       begin
         # We've received a serialized request object
         request = Puppet::Indirector::Request.convert_from(:pson, pson)
-        execute_request(request)
+        benchmark :notice, "Queued catalog for #{request.key}" do
+          execute_request(request)
+        end
       rescue => detail
         puts detail.backtrace if Puppet[:trace]
         Puppet.err detail
@@ -100,10 +100,11 @@ class Puppet::Application::Compiler < Puppet::Application
         Puppet::Util::Log.level = :info
       end
 
-      unless Puppet[:daemonize]
-        Puppet::Util::Log.newdestination(:console)
-        options[:setdest] = true
-      end
+    end
+
+    unless Puppet[:daemonize]
+      Puppet::Util::Log.newdestination(:console)
+      options[:setdest] = true
     end
 
     Puppet[:catalog_terminus] = :queue

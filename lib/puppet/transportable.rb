@@ -51,7 +51,7 @@ module Puppet
         trans[param] = value
       }
       trans.catalog = self.catalog
-      Puppet::Type::Component.create(trans)
+      Puppet::Type::Component.new(trans)
     end
 
     def to_hash

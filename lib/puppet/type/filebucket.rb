@@ -60,33 +60,36 @@ module Puppet
       new(:name => "puppet", :path => Puppet[:clientbucketdir])
     end
 
-    def bucket
-      mkbucket unless defined?(@bucket)
-      @bucket
-    end
+    instance_methods do
 
-    def mkbucket
-      # Default is a local filebucket, if no server is given.
-      # If the default path has been removed, too, then
-      # the puppetmaster is used as default server
-
-      type = "local"
-      args = {}
-      if self[:path]
-        args[:Path] = self[:path]
-      else
-        args[:Server] = self[:server]
-        args[:Port] = self[:port]
+      def bucket
+        mkbucket unless defined?(@bucket)
+        @bucket
       end
 
-      begin
-        @bucket = Puppet::FileBucket::Dipper.new(args)
-      rescue => detail
-        puts detail.backtrace if Puppet[:trace]
-        self.fail("Could not create #{type} filebucket: #{detail}")
-      end
+      def mkbucket
+        # Default is a local filebucket, if no server is given.
+        # If the default path has been removed, too, then
+        # the puppetmaster is used as default server
 
-      @bucket.name = self.name
+        type = "local"
+        args = {}
+        if self[:path]
+          args[:Path] = self[:path]
+        else
+          args[:Server] = self[:server]
+          args[:Port] = self[:port]
+        end
+
+        begin
+          @bucket = Puppet::FileBucket::Dipper.new(args)
+        rescue => detail
+          puts detail.backtrace if Puppet[:trace]
+          self.fail("Could not create #{type} filebucket: #{detail}")
+        end
+
+        @bucket.name = self.name
+      end
     end
   end
 end

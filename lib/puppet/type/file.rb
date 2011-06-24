@@ -323,464 +323,464 @@ Puppet::Type.newtype(:file) do
     return self.new(:name => base, :recurse => true, :recurselimit => 1, :audit => :all).recurse_local.values
   end
 
-  # Determine the user to write files as.
-  def asuser
-    if self.should(:owner) and ! self.should(:owner).is_a?(Symbol)
-      writeable = Puppet::Util::SUIDManager.asuser(self.should(:owner)) {
-        FileTest.writable?(::File.dirname(self[:path]))
-      }
+  instance_methods do
 
-      # If the parent directory is writeable, then we execute
-      # as the user in question.  Otherwise we'll rely on
-      # the 'owner' property to do things.
-      asuser = self.should(:owner) if writeable
+    # Determine the user to write files as.
+    def asuser
+      if self.should(:owner) and ! self.should(:owner).is_a?(Symbol)
+        writeable = Puppet::Util::SUIDManager.asuser(self.should(:owner)) {
+          FileTest.writable?(::File.dirname(self[:path]))
+        }
+
+        # If the parent directory is writeable, then we execute
+        # as the user in question.  Otherwise we'll rely on
+        # the 'owner' property to do things.
+        asuser = self.should(:owner) if writeable
+      end
+
+      asuser
     end
 
-    asuser
-  end
+    def bucket
+      return @bucket if @bucket
 
-  def bucket
-    return @bucket if @bucket
+      backup = self[:backup]
+      return nil unless backup
+      return nil if backup =~ /^\./
 
-    backup = self[:backup]
-    return nil unless backup
-    return nil if backup =~ /^\./
+      unless catalog or backup == "puppet"
+        fail "Can not find filebucket for backups without a catalog"
+      end
 
-    unless catalog or backup == "puppet"
-      fail "Can not find filebucket for backups without a catalog"
+      unless catalog and filebucket = catalog.resource(:filebucket, backup) or backup == "puppet"
+        fail "Could not find filebucket #{backup} specified in backup"
+      end
+
+      return default_bucket unless filebucket
+
+      @bucket = filebucket.bucket
+
+      @bucket
     end
 
-    unless catalog and filebucket = catalog.resource(:filebucket, backup) or backup == "puppet"
-      fail "Could not find filebucket #{backup} specified in backup"
+    def default_bucket
+      Puppet::Type.type(:filebucket).mkdefaultbucket.bucket
     end
 
-    return default_bucket unless filebucket
-
-    @bucket = filebucket.bucket
-
-    @bucket
-  end
-
-  def default_bucket
-    Puppet::Type.type(:filebucket).mkdefaultbucket.bucket
-  end
-
-  # Does the file currently exist?  Just checks for whether
-  # we have a stat
-  def exist?
-    stat ? true : false
-  end
-
-  # We have to do some extra finishing, to retrieve our bucket if
-  # there is one.
-  def finish
-    # Look up our bucket, if there is one
-    bucket
-    super
-  end
-
-  # Create any children via recursion or whatever.
-  def eval_generate
-    return [] unless self.recurse?
-
-    recurse
-    #recurse.reject do |resource|
-    #    catalog.resource(:file, resource[:path])
-    #end.each do |child|
-    #    catalog.add_resource child
-    #    catalog.relationship_graph.add_edge self, child
-    #end
-  end
-
-  def flush
-    # We want to make sure we retrieve metadata anew on each transaction.
-    @parameters.each do |name, param|
-      param.flush if param.respond_to?(:flush)
+    # Does the file currently exist?  Just checks for whether
+    # we have a stat
+    def exist?
+      stat ? true : false
     end
-    @stat = nil
-  end
 
-  def initialize(hash)
-    # Used for caching clients
-    @clients = {}
+    # We have to do some extra finishing, to retrieve our bucket if
+    # there is one.
+    def finish
+      # Look up our bucket, if there is one
+      bucket
+      super
+    end
 
-    super
+    # Create any children via recursion or whatever.
+    def eval_generate
+      return [] unless self.recurse?
 
-    # If they've specified a source, we get our 'should' values
-    # from it.
-    unless self[:ensure]
+      recurse
+      #recurse.reject do |resource|
+      #    catalog.resource(:file, resource[:path])
+      #end.each do |child|
+      #    catalog.add_resource child
+      #    catalog.relationship_graph.add_edge self, child
+      #end
+    end
+
+    def flush
+      # We want to make sure we retrieve metadata anew on each transaction.
+      @parameters.each do |name, param|
+        param.flush if param.respond_to?(:flush)
+      end
+      @stat = nil
+    end
+
+    def initialize(hash)
+      super
+
+      # If they've specified a source, we get our 'should' values
+      # from it.
+      unless self[:ensure]
+        if self[:target]
+          self[:ensure] = :symlink
+        elsif self[:content]
+          self[:ensure] = :file
+        end
+      end
+
+      @stat = nil
+    end
+
+    # Configure discovered resources to be purged.
+    def mark_children_for_purging(children)
+      children.each do |name, child|
+        next if child[:source]
+        child[:ensure] = :absent
+      end
+    end
+
+    # Create a new file or directory object as a child to the current
+    # object.
+    def newchild(path)
+      full_path = ::File.join(self[:path], path)
+
+      # Add some new values to our original arguments -- these are the ones
+      # set at initialization.  We specifically want to exclude any param
+      # values set by the :source property or any default values.
+      # LAK:NOTE This is kind of silly, because the whole point here is that
+      # the values set at initialization should live as long as the resource
+      # but values set by default or by :source should only live for the transaction
+      # or so.  Unfortunately, we don't have a straightforward way to manage
+      # the different lifetimes of this data, so we kludge it like this.
+      # The right-side hash wins in the merge.
+      options = @original_parameters.merge(:path => full_path).reject { |param, value| value.nil? }
+
+      # These should never be passed to our children.
+      [:parent, :ensure, :recurse, :recurselimit, :target, :alias, :source].each do |param|
+        options.delete(param) if options.include?(param)
+      end
+
+      self.class.new(options)
+    end
+
+    # Files handle paths specially, because they just lengthen their
+    # path names, rather than including the full parent's title each
+    # time.
+    def pathbuilder
+      # We specifically need to call the method here, so it looks
+      # up our parent in the catalog graph.
+      if parent = parent()
+        # We only need to behave specially when our parent is also
+        # a file
+        if parent.is_a?(self.class)
+          # Remove the parent file name
+          list = parent.pathbuilder
+          list.pop # remove the parent's path info
+          return list << self.ref
+        else
+          return super
+        end
+      else
+        return [self.ref]
+      end
+    end
+
+    # Should we be purging?
+    def purge?
+      @parameters.include?(:purge) and (self[:purge] == :true or self[:purge] == "true")
+    end
+
+    # Recursively generate a list of file resources, which will
+    # be used to copy remote files, manage local files, and/or make links
+    # to map to another directory.
+    def recurse
+      children = (self[:recurse] == :remote) ? {} : recurse_local
+
       if self[:target]
-        self[:ensure] = :symlink
-      elsif self[:content]
-        self[:ensure] = :file
+        recurse_link(children)
+      elsif self[:source]
+        recurse_remote(children)
+      end
+
+      # If we're purging resources, then delete any resource that isn't on the
+      # remote system.
+      mark_children_for_purging(children) if self.purge?
+
+      result = children.values.sort { |a, b| a[:path] <=> b[:path] }
+      remove_less_specific_files(result)
+    end
+
+    # This is to fix bug #2296, where two files recurse over the same
+    # set of files.  It's a rare case, and when it does happen you're
+    # not likely to have many actual conflicts, which is good, because
+    # this is a pretty inefficient implementation.
+    def remove_less_specific_files(files)
+      mypath = self[:path].split(::File::Separator)
+      other_paths = catalog.vertices.
+        select  { |r| r.is_a?(self.class) and r[:path] != self[:path] }.
+        collect { |r| r[:path].split(::File::Separator) }.
+        select  { |p| p[0,mypath.length]  == mypath }
+
+      return files if other_paths.empty?
+
+      files.reject { |file|
+        path = file[:path].split(::File::Separator)
+        other_paths.any? { |p| path[0,p.length] == p }
+        }
+    end
+
+    # A simple method for determining whether we should be recursing.
+    def recurse?
+      self[:recurse] == true or self[:recurse] == :remote
+    end
+
+    # Recurse the target of the link.
+    def recurse_link(children)
+      perform_recursion(self[:target]).each do |meta|
+        if meta.relative_path == "."
+          self[:ensure] = :directory
+          next
+        end
+
+        children[meta.relative_path] ||= newchild(meta.relative_path)
+        if meta.ftype == "directory"
+          children[meta.relative_path][:ensure] = :directory
+        else
+          children[meta.relative_path][:ensure] = :link
+          children[meta.relative_path][:target] = meta.full_path
+        end
+      end
+      children
+    end
+
+    # Recurse the file itself, returning a Metadata instance for every found file.
+    def recurse_local
+      result = perform_recursion(self[:path])
+      return {} unless result
+      result.inject({}) do |hash, meta|
+        next hash if meta.relative_path == "."
+
+        hash[meta.relative_path] = newchild(meta.relative_path)
+        hash
       end
     end
 
-    @stat = nil
-  end
+    # Recurse against our remote file.
+    def recurse_remote(children)
+      sourceselect = self[:sourceselect]
 
-  # Configure discovered resources to be purged.
-  def mark_children_for_purging(children)
-    children.each do |name, child|
-      next if child[:source]
-      child[:ensure] = :absent
-    end
-  end
-
-  # Create a new file or directory object as a child to the current
-  # object.
-  def newchild(path)
-    full_path = ::File.join(self[:path], path)
-
-    # Add some new values to our original arguments -- these are the ones
-    # set at initialization.  We specifically want to exclude any param
-    # values set by the :source property or any default values.
-    # LAK:NOTE This is kind of silly, because the whole point here is that
-    # the values set at initialization should live as long as the resource
-    # but values set by default or by :source should only live for the transaction
-    # or so.  Unfortunately, we don't have a straightforward way to manage
-    # the different lifetimes of this data, so we kludge it like this.
-    # The right-side hash wins in the merge.
-    options = @original_parameters.merge(:path => full_path).reject { |param, value| value.nil? }
-
-    # These should never be passed to our children.
-    [:parent, :ensure, :recurse, :recurselimit, :target, :alias, :source].each do |param|
-      options.delete(param) if options.include?(param)
-    end
-
-    self.class.new(options)
-  end
-
-  # Files handle paths specially, because they just lengthen their
-  # path names, rather than including the full parent's title each
-  # time.
-  def pathbuilder
-    # We specifically need to call the method here, so it looks
-    # up our parent in the catalog graph.
-    if parent = parent()
-      # We only need to behave specially when our parent is also
-      # a file
-      if parent.is_a?(self.class)
-        # Remove the parent file name
-        list = parent.pathbuilder
-        list.pop # remove the parent's path info
-        return list << self.ref
-      else
-        return super
-      end
-    else
-      return [self.ref]
-    end
-  end
-
-  # Should we be purging?
-  def purge?
-    @parameters.include?(:purge) and (self[:purge] == :true or self[:purge] == "true")
-  end
-
-  # Recursively generate a list of file resources, which will
-  # be used to copy remote files, manage local files, and/or make links
-  # to map to another directory.
-  def recurse
-    children = (self[:recurse] == :remote) ? {} : recurse_local
-
-    if self[:target]
-      recurse_link(children)
-    elsif self[:source]
-      recurse_remote(children)
-    end
-
-    # If we're purging resources, then delete any resource that isn't on the
-    # remote system.
-    mark_children_for_purging(children) if self.purge?
-
-    result = children.values.sort { |a, b| a[:path] <=> b[:path] }
-    remove_less_specific_files(result)
-  end
-
-  # This is to fix bug #2296, where two files recurse over the same
-  # set of files.  It's a rare case, and when it does happen you're
-  # not likely to have many actual conflicts, which is good, because
-  # this is a pretty inefficient implementation.
-  def remove_less_specific_files(files)
-    mypath = self[:path].split(::File::Separator)
-    other_paths = catalog.vertices.
-      select  { |r| r.is_a?(self.class) and r[:path] != self[:path] }.
-      collect { |r| r[:path].split(::File::Separator) }.
-      select  { |p| p[0,mypath.length]  == mypath }
-
-    return files if other_paths.empty?
-
-    files.reject { |file|
-      path = file[:path].split(::File::Separator)
-      other_paths.any? { |p| path[0,p.length] == p }
-      }
-  end
-
-  # A simple method for determining whether we should be recursing.
-  def recurse?
-    self[:recurse] == true or self[:recurse] == :remote
-  end
-
-  # Recurse the target of the link.
-  def recurse_link(children)
-    perform_recursion(self[:target]).each do |meta|
-      if meta.relative_path == "."
-        self[:ensure] = :directory
-        next
-      end
-
-      children[meta.relative_path] ||= newchild(meta.relative_path)
-      if meta.ftype == "directory"
-        children[meta.relative_path][:ensure] = :directory
-      else
-        children[meta.relative_path][:ensure] = :link
-        children[meta.relative_path][:target] = meta.full_path
-      end
-    end
-    children
-  end
-
-  # Recurse the file itself, returning a Metadata instance for every found file.
-  def recurse_local
-    result = perform_recursion(self[:path])
-    return {} unless result
-    result.inject({}) do |hash, meta|
-      next hash if meta.relative_path == "."
-
-      hash[meta.relative_path] = newchild(meta.relative_path)
-      hash
-    end
-  end
-
-  # Recurse against our remote file.
-  def recurse_remote(children)
-    sourceselect = self[:sourceselect]
-
-    total = self[:source].collect do |source|
-      next unless result = perform_recursion(source)
-      return if top = result.find { |r| r.relative_path == "." } and top.ftype != "directory"
-      result.each { |data| data.source = "#{source}/#{data.relative_path}" }
-      break result if result and ! result.empty? and sourceselect == :first
-      result
-    end.flatten
-
-    # This only happens if we have sourceselect == :all
-    unless sourceselect == :first
-      found = []
-      total.reject! do |data|
-        result = found.include?(data.relative_path)
-        found << data.relative_path unless found.include?(data.relative_path)
+      total = self[:source].collect do |source|
+        next unless result = perform_recursion(source)
+        return if top = result.find { |r| r.relative_path == "." } and top.ftype != "directory"
+        result.each { |data| data.source = "#{source}/#{data.relative_path}" }
+        break result if result and ! result.empty? and sourceselect == :first
         result
+      end.flatten
+
+      # This only happens if we have sourceselect == :all
+      unless sourceselect == :first
+        found = []
+        total.reject! do |data|
+          result = found.include?(data.relative_path)
+          found << data.relative_path unless found.include?(data.relative_path)
+          result
+        end
       end
-    end
 
-    total.each do |meta|
-      if meta.relative_path == "."
-        parameter(:source).metadata = meta
-        next
+      total.each do |meta|
+        if meta.relative_path == "."
+          parameter(:source).metadata = meta
+          next
+        end
+        children[meta.relative_path] ||= newchild(meta.relative_path)
+        children[meta.relative_path][:source] = meta.source
+        children[meta.relative_path][:checksum] = :md5 if meta.ftype == "file"
+
+        children[meta.relative_path].parameter(:source).metadata = meta
       end
-      children[meta.relative_path] ||= newchild(meta.relative_path)
-      children[meta.relative_path][:source] = meta.source
-      children[meta.relative_path][:checksum] = :md5 if meta.ftype == "file"
 
-      children[meta.relative_path].parameter(:source).metadata = meta
+      children
     end
 
-    children
-  end
-
-  def perform_recursion(path)
-    Puppet::FileServing::Metadata.indirection.search(
-      path,
-      :links => self[:links],
-      :recurse => (self[:recurse] == :remote ? true : self[:recurse]),
-      :recurselimit => self[:recurselimit],
-      :ignore => self[:ignore],
-      :checksum_type => (self[:source] || self[:content]) ? self[:checksum] : :none
-    )
-  end
-
-  # Remove any existing data.  This is only used when dealing with
-  # links or directories.
-  def remove_existing(should)
-    return unless s = stat
-
-    self.fail "Could not back up; will not replace" unless perform_backup
-
-    unless should.to_s == "link"
-      return if s.ftype.to_s == should.to_s
+    def perform_recursion(path)
+      Puppet::FileServing::Metadata.indirection.search(
+        path,
+        :links => self[:links],
+        :recurse => (self[:recurse] == :remote ? true : self[:recurse]),
+        :recurselimit => self[:recurselimit],
+        :ignore => self[:ignore],
+        :checksum_type => (self[:source] || self[:content]) ? self[:checksum] : :none
+      )
     end
 
-    case s.ftype
-    when "directory"
-      if self[:force] == :true
-        debug "Removing existing directory for replacement with #{should}"
-        FileUtils.rmtree(self[:path])
+    # Remove any existing data.  This is only used when dealing with
+    # links or directories.
+    def remove_existing(should)
+      return unless s = stat
+
+      self.fail "Could not back up; will not replace" unless perform_backup
+
+      unless should.to_s == "link"
+        return if s.ftype.to_s == should.to_s
+      end
+
+      case s.ftype
+      when "directory"
+        if self[:force] == :true
+          debug "Removing existing directory for replacement with #{should}"
+          FileUtils.rmtree(self[:path])
+        else
+          notice "Not removing directory; use 'force' to override"
+        end
+      when "link", "file"
+        debug "Removing existing #{s.ftype} for replacement with #{should}"
+        ::File.unlink(self[:path])
       else
-        notice "Not removing directory; use 'force' to override"
+        self.fail "Could not back up files of type #{s.ftype}"
       end
-    when "link", "file"
-      debug "Removing existing #{s.ftype} for replacement with #{should}"
-      ::File.unlink(self[:path])
-    else
-      self.fail "Could not back up files of type #{s.ftype}"
-    end
-    expire
-  end
-
-  def retrieve
-    if source = parameter(:source)
-      source.copy_source_values
-    end
-    super
-  end
-
-  # Set the checksum, from another property.  There are multiple
-  # properties that modify the contents of a file, and they need the
-  # ability to make sure that the checksum value is in sync.
-  def setchecksum(sum = nil)
-    if @parameters.include? :checksum
-      if sum
-        @parameters[:checksum].checksum = sum
-      else
-        # If they didn't pass in a sum, then tell checksum to
-        # figure it out.
-        currentvalue = @parameters[:checksum].retrieve
-        @parameters[:checksum].checksum = currentvalue
-      end
-    end
-  end
-
-  # Should this thing be a normal file?  This is a relatively complex
-  # way of determining whether we're trying to create a normal file,
-  # and it's here so that the logic isn't visible in the content property.
-  def should_be_file?
-    return true if self[:ensure] == :file
-
-    # I.e., it's set to something like "directory"
-    return false if e = self[:ensure] and e != :present
-
-    # The user doesn't really care, apparently
-    if self[:ensure] == :present
-      return true unless s = stat
-      return(s.ftype == "file" ? true : false)
-    end
-
-    # If we've gotten here, then :ensure isn't set
-    return true if self[:content]
-    return true if stat and stat.ftype == "file"
-    false
-  end
-
-  # Stat our file.  Depending on the value of the 'links' attribute, we
-  # use either 'stat' or 'lstat', and we expect the properties to use the
-  # resulting stat object accordingly (mostly by testing the 'ftype'
-  # value).
-  # XXX This doesn't cache like it should, but I couldn't get cached_attr
-  # to work with type instances
-  # cached_attr(:stat) do
-  def stat
-    method = :stat
-
-    # Files are the only types that support links
-    if (self.class.name == :file and self[:links] != :follow) or self.class.name == :tidy
-      method = :lstat
-    end
-    path = self[:path]
-
-    begin
-      ::File.send(method, self[:path])
-    rescue Errno::ENOENT => error
-      return nil
-    rescue Errno::EACCES => error
-      warning "Could not stat; permission denied"
-      return nil
-    end
-  end
-
-  # We have to hack this just a little bit, because otherwise we'll get
-  # an error when the target and the contents are created as properties on
-  # the far side.
-  def to_trans(retrieve = true)
-    obj = super
-    obj.delete(:target) if obj[:target] == :notlink
-    obj
-  end
-
-  # Write out the file.  Requires the property name for logging.
-  # Write will be done by the content property, along with checksum computation
-  def write(property)
-    remove_existing(:file)
-
-    use_temporary_file = write_temporary_file?
-    if use_temporary_file
-      path = "#{self[:path]}.puppettmp_#{rand(10000)}"
-      path = "#{self[:path]}.puppettmp_#{rand(10000)}" while ::File.exists?(path) or ::File.symlink?(path)
-    else
-      path = self[:path]
-    end
-
-    mode = self.should(:mode) # might be nil
-    umask = mode ? 000 : 022
-    mode_int = mode ? mode.to_i(8) : nil
-
-    content_checksum = Puppet::Util.withumask(umask) { ::File.open(path, 'w', mode_int ) { |f| write_content(f) } }
-
-    # And put our new file in place
-    if use_temporary_file # This is only not true when our file is empty.
-      begin
-        fail_if_checksum_is_wrong(path, content_checksum) if validate_checksum?
-        ::File.rename(path, self[:path])
-      rescue => detail
-        fail "Could not rename temporary file #{path} to #{self[:path]}: #{detail}"
-      ensure
-        # Make sure the created file gets removed
-        ::File.unlink(path) if FileTest.exists?(path)
-      end
-    end
-
-    # make sure all of the modes are actually correct
-    property_fix
-
-  end
-
-  # Should we validate the checksum of the file we're writing?
-  def validate_checksum?
-    self[:checksum] !~ /time/
-  end
-
-  # Make sure the file we wrote out is what we think it is.
-  def fail_if_checksum_is_wrong(path, content_checksum)
-    newsum = parameter(:checksum).sum_file(path)
-    return if [:absent, nil, content_checksum].include?(newsum)
-
-    self.fail "File written to disk did not match checksum; discarding changes (#{content_checksum} vs #{newsum})"
-  end
-
-  # write the current content. Note that if there is no content property
-  # simply opening the file with 'w' as done in write is enough to truncate
-  # or write an empty length file.
-  def write_content(file)
-    (content = property(:content)) && content.write(file)
-  end
-
-  def write_temporary_file?
-    # unfortunately we don't know the source file size before fetching it
-    # so let's assume the file won't be empty
-    (c = property(:content) and c.length) || (s = @parameters[:source] and 1)
-  end
-
-  # There are some cases where all of the work does not get done on
-  # file creation/modification, so we have to do some extra checking.
-  def property_fix
-    properties.each do |thing|
-      next unless [:mode, :owner, :group, :seluser, :selrole, :seltype, :selrange].include?(thing.name)
-
-      # Make sure we get a new stat objct
       expire
-      currentvalue = thing.retrieve
-      thing.sync unless thing.safe_insync?(currentvalue)
+    end
+
+    def retrieve
+      if source = parameter(:source)
+        source.copy_source_values
+      end
+      super
+    end
+
+    # Set the checksum, from another property.  There are multiple
+    # properties that modify the contents of a file, and they need the
+    # ability to make sure that the checksum value is in sync.
+    def setchecksum(sum = nil)
+      if @parameters.include? :checksum
+        if sum
+          @parameters[:checksum].checksum = sum
+        else
+          # If they didn't pass in a sum, then tell checksum to
+          # figure it out.
+          currentvalue = @parameters[:checksum].retrieve
+          @parameters[:checksum].checksum = currentvalue
+        end
+      end
+    end
+
+    # Should this thing be a normal file?  This is a relatively complex
+    # way of determining whether we're trying to create a normal file,
+    # and it's here so that the logic isn't visible in the content property.
+    def should_be_file?
+      return true if self[:ensure] == :file
+
+      # I.e., it's set to something like "directory"
+      return false if e = self[:ensure] and e != :present
+
+      # The user doesn't really care, apparently
+      if self[:ensure] == :present
+        return true unless s = stat
+        return(s.ftype == "file" ? true : false)
+      end
+
+      # If we've gotten here, then :ensure isn't set
+      return true if self[:content]
+      return true if stat and stat.ftype == "file"
+      false
+    end
+
+    # Stat our file.  Depending on the value of the 'links' attribute, we
+    # use either 'stat' or 'lstat', and we expect the properties to use the
+    # resulting stat object accordingly (mostly by testing the 'ftype'
+    # value).
+    # XXX This doesn't cache like it should, but I couldn't get cached_attr
+    # to work with type instances
+    # cached_attr(:stat) do
+    def stat
+      method = :stat
+
+      # Files are the only types that support links
+      if (self.class.name == :file and self[:links] != :follow) or self.class.name == :tidy
+        method = :lstat
+      end
+      path = self[:path]
+
+      begin
+        ::File.send(method, self[:path])
+      rescue Errno::ENOENT => error
+        return nil
+      rescue Errno::EACCES => error
+        warning "Could not stat; permission denied"
+        return nil
+      end
+    end
+
+    # We have to hack this just a little bit, because otherwise we'll get
+    # an error when the target and the contents are created as properties on
+    # the far side.
+    def to_trans(retrieve = true)
+      obj = super
+      obj.delete(:target) if obj[:target] == :notlink
+      obj
+    end
+
+    # Write out the file.  Requires the property name for logging.
+    # Write will be done by the content property, along with checksum computation
+    def write(property)
+      remove_existing(:file)
+
+      use_temporary_file = write_temporary_file?
+      if use_temporary_file
+        path = "#{self[:path]}.puppettmp_#{rand(10000)}"
+        path = "#{self[:path]}.puppettmp_#{rand(10000)}" while ::File.exists?(path) or ::File.symlink?(path)
+      else
+        path = self[:path]
+      end
+
+      mode = self.should(:mode) # might be nil
+      umask = mode ? 000 : 022
+      mode_int = mode ? mode.to_i(8) : nil
+
+      content_checksum = Puppet::Util.withumask(umask) { ::File.open(path, 'w', mode_int ) { |f| write_content(f) } }
+
+      # And put our new file in place
+      if use_temporary_file # This is only not true when our file is empty.
+        begin
+          fail_if_checksum_is_wrong(path, content_checksum) if validate_checksum?
+          ::File.rename(path, self[:path])
+        rescue => detail
+          fail "Could not rename temporary file #{path} to #{self[:path]}: #{detail}"
+        ensure
+          # Make sure the created file gets removed
+          ::File.unlink(path) if FileTest.exists?(path)
+        end
+      end
+
+      # make sure all of the modes are actually correct
+      property_fix
+
+    end
+
+    # Should we validate the checksum of the file we're writing?
+    def validate_checksum?
+      self[:checksum] !~ /time/
+    end
+
+    # Make sure the file we wrote out is what we think it is.
+    def fail_if_checksum_is_wrong(path, content_checksum)
+      newsum = parameter(:checksum).sum_file(path)
+      return if [:absent, nil, content_checksum].include?(newsum)
+
+      self.fail "File written to disk did not match checksum; discarding changes (#{content_checksum} vs #{newsum})"
+    end
+
+    # write the current content. Note that if there is no content property
+    # simply opening the file with 'w' as done in write is enough to truncate
+    # or write an empty length file.
+    def write_content(file)
+      (content = property(:content)) && content.write(file)
+    end
+
+    def write_temporary_file?
+      # unfortunately we don't know the source file size before fetching it
+      # so let's assume the file won't be empty
+      (c = property(:content) and c.length) || (s = @parameters[:source] and 1)
+    end
+
+    # There are some cases where all of the work does not get done on
+    # file creation/modification, so we have to do some extra checking.
+    def property_fix
+      properties.each do |thing|
+        next unless [:mode, :owner, :group, :seluser, :selrole, :seltype, :selrange].include?(thing.name)
+
+        # Make sure we get a new stat objct
+        expire
+        currentvalue = thing.retrieve
+        thing.sync unless thing.safe_insync?(currentvalue)
+      end
     end
   end
 end

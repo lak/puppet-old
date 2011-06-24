@@ -8,6 +8,11 @@ class Puppet::OldType
   extend Puppet::Util # for symbolize()
   extend Puppet::Util::ClassGen # for genclass()
 
+
+  def self.metaparam_module
+    @metaparam_module ||= Module.new
+  end
+
   class RelationshipMetaparam < Puppet::Parameter
     class << self
       attr_accessor :direction, :events, :callback, :subclasses
@@ -135,7 +140,7 @@ class Puppet::OldType
     # Directly pasting code, since doing the method extraction for this is too hard
     # in the current phase.
     if options[:boolean]
-      define_method(name.to_s + "?") do
+      metaparam_module.define_method(name.to_s + "?") do
         val = self[name]
         if val == :true or val == true
           return true
@@ -249,7 +254,7 @@ class Puppet::OldType
   def handle_param_options(name, options)
     # If it's a boolean parameter, create a method to test the value easily
     if options[:boolean]
-      singleton_class.define_method(name.to_s + "?") do
+      instance_module.define_method(name.to_s + "?") do
         val = self[name]
         if val == :true or val == true
           return true
@@ -381,7 +386,7 @@ class Puppet::OldType
     @validattrs ||= {}
 
     unless @validattrs.include?(name)
-      @validattrs[name] = !!(self.validproperty?(name) or self.validparameter?(name) or self.metaparam?(name))
+      @validattrs[name] = !!(self.validproperty?(name) or self.validparameter?(name) or self.class.metaparam?(name))
     end
 
     @validattrs[name]
@@ -804,6 +809,8 @@ class Puppet::OldType
     @name = name
     @aliases = Hash.new
 
+    @instance_module = Module.new
+
     @defaults = {}
 
     @parameters ||= []
@@ -1066,7 +1073,7 @@ class Puppet::OldType
   # Create a block to validate that our object is set up entirely.  This will
   # be run before the object is operated on.
   def validate(&block)
-    singleton_class.define_method(:validate, &block)
+    instance_module.define_method(:validate, &block)
     #@validate = block
   end
 
@@ -1094,6 +1101,12 @@ class Puppet::OldType
     end
     resource
   end
+
+  def instance_methods(&block)
+    @instance_module.class_eval(&block)
+  end
+
+  attr_reader :instance_module
 end
 require 'puppet/provider'
 # Always load these types.

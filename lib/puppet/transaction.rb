@@ -50,6 +50,7 @@ class Puppet::Transaction
     add_resource_status(status)
     event_manager.queue_events(ancestor || resource, status.events) unless status.failed?
   rescue => detail
+    puts detail.backtrace if Puppet[:trace]
     resource.err "Could not evaluate: #{detail}"
   end
 
@@ -158,7 +159,7 @@ class Puppet::Transaction
         res.info "Duplicate generated resource; skipping"
       end
     end
-    sentinal = Puppet::Type::Whit.new(:name => "completed_#{resource.title}", :catalog => resource.catalog)
+    sentinal = Puppet::Type.type(:whit).new(:name => "completed_#{resource.title}", :catalog => resource.catalog)
     relationship_graph.adjacent(resource,:direction => :out,:type => :edges).each { |e|
       add_conditional_directed_dependency(sentinal, e.target, e.label)
       relationship_graph.remove_edge! e

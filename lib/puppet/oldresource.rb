@@ -719,6 +719,9 @@ class Puppet::OldResource
   def initialize(type, resource)
     @resource_type = type
 
+    extend(Puppet::OldType.metaparam_module)
+    extend(type.instance_module)
+
     raise Puppet::DevError, "Got TransObject instead of Resource or hash" if resource.is_a?(Puppet::TransObject)
     resource = resource_type.hash2resource(resource) unless resource.is_a?(Puppet::Resource)
 

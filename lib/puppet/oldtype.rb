@@ -439,7 +439,7 @@ class Puppet::OldType
         # is already managed and has a different provider set
         if other = provider_instances[instance.name]
           Puppet.warning "%s %s found in both %s and %s; skipping the %s version" %
-            [self.name.to_s.capitalize, instance.name, other.class.name, instance.class.name, instance.class.name]
+            [self.name.to_s.capitalize, instance.name, other.resource_type.name, instance.resource_type.name, instance.resource_type.name]
           next
         end
         provider_instances[instance.name] = instance
@@ -520,7 +520,7 @@ class Puppet::OldType
       list = Array(list).collect {|p| p.to_sym}
       unless list == [:all]
         list.each do |param|
-          next if @resource.class.validattr?(param)
+          next if @resource.resource_type.validattr?(param)
           fail "Cannot audit #{param}: not a valid attribute for #{resource}"
         end
       end
@@ -528,13 +528,13 @@ class Puppet::OldType
 
     munge do |args|
       properties_to_audit(args).each do |param|
-        next unless resource.class.validproperty?(param)
+        next unless resource.resource_type.validproperty?(param)
         resource.newattr(param)
       end
     end
 
     def all_properties
-      resource.class.properties.find_all do |property|
+      resource.resource_type.properties.find_all do |property|
         resource.provider.nil? or resource.provider.class.supports_parameter?(property)
       end.collect do |property|
         property.name
@@ -623,7 +623,7 @@ class Puppet::OldType
       raise(ArgumentError, "Cannot add aliases without a catalog") unless @resource.catalog
 
       aliases.each do |other|
-        if obj = @resource.catalog.resource(@resource.class.name, other)
+        if obj = @resource.catalog.resource(@resource.resource_type.name, other)
           unless obj.object_id == @resource.object_id
             self.fail("#{@resource.title} can not create alias #{other}: object already exists")
           end

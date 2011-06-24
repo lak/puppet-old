@@ -874,7 +874,8 @@ class Puppet::OldResource
 
   # Convert to a transportable object
   def to_trans(ret = true)
-    trans = TransObject.new(self.title, resource_type.name)
+    require 'puppet/transportable'
+    trans = Puppet::TransObject.new(self.title, resource_type.name)
 
     values = retrieve_resource
     values.each do |name, value|

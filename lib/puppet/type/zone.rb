@@ -432,12 +432,6 @@ Puppet::Type.newtype(:zone) do
     end
   end
 
-  def validate_ip(ip, name)
-      IPAddr.new(ip) if ip
-  rescue ArgumentError
-      self.fail "'#{ip}' is an invalid #{name}"
-  end
-
   validate do
     value = self[:ip]
     interface, address, defrouter = value.split(':')
@@ -456,35 +450,43 @@ Puppet::Type.newtype(:zone) do
     self.fail "zone path is required" unless self[:path]
   end
 
-  def retrieve
-    provider.flush
-    if hash = provider.properties and hash[:ensure] != :absent
-      result = setstatus(hash)
-      result
-    else
-      # Return all properties as absent.
-      return properties.inject({}) do | prophash, property|
-        prophash[property] = :absent
-        prophash
-      end
+  instance_methods do
+    def validate_ip(ip, name)
+      IPAddr.new(ip) if ip
+    rescue ArgumentError
+      self.fail "'#{ip}' is an invalid #{name}"
     end
-  end
 
-  # Take the results of a listing and set everything appropriately.
-  def setstatus(hash)
-    prophash = {}
-    hash.each do |param, value|
-      next if param == :name
-      case self.class.attrtype(param)
-      when :property
-        # Only try to provide values for the properties we're managing
-        if prop = self.property(param)
-          prophash[prop] = value
-        end
+    def retrieve
+      provider.flush
+      if hash = provider.properties and hash[:ensure] != :absent
+        result = setstatus(hash)
+        result
       else
-        self[param] = value
+        # Return all properties as absent.
+        return properties.inject({}) do | prophash, property|
+          prophash[property] = :absent
+          prophash
+        end
       end
     end
-    prophash
+
+    # Take the results of a listing and set everything appropriately.
+    def setstatus(hash)
+      prophash = {}
+      hash.each do |param, value|
+        next if param == :name
+        case self.class.attrtype(param)
+        when :property
+          # Only try to provide values for the properties we're managing
+          if prop = self.property(param)
+            prophash[prop] = value
+          end
+        else
+          self[param] = value
+        end
+      end
+      prophash
+    end
   end
 end

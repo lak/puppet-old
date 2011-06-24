@@ -377,36 +377,35 @@ Puppet::Type.newtype(:cron) do
 
   # We have to reorder things so that :provide is before :target
 
-  attr_accessor :uid
+  instance_methods do
+    attr_accessor :uid
 
-  def value(name)
-    name = symbolize(name)
-    ret = nil
-    if obj = @parameters[name]
-      ret = obj.should
+    def value(name)
+      name = symbolize(name)
+      ret = nil
+      if obj = @parameters[name]
+        ret = obj.should
 
-      ret ||= obj.retrieve
+        ret ||= obj.retrieve
 
-      if ret == :absent
-        ret = nil
+        if ret == :absent
+          ret = nil
+        end
       end
-    end
 
-    unless ret
-      case name
-      when :command
-        devfail "No command, somehow" unless @parameters[:ensure].value == :absent
-      when :special
-        # nothing
-      else
-        #ret = (self.class.validproperty?(name).default || "*").to_s
-        ret = "*"
+      unless ret
+        case name
+        when :command
+          devfail "No command, somehow" unless @parameters[:ensure].value == :absent
+        when :special
+          # nothing
+        else
+          #ret = (self.class.validproperty?(name).default || "*").to_s
+          ret = "*"
+        end
       end
-    end
 
-    ret
+      ret
+    end
   end
 end
-
-
-

@@ -71,6 +71,7 @@ MCX settings refer to, the MCX resource will autorequire that user, group, or co
   # JJM Yes, this is not DRY at all.  Because of the code blocks
   # autorequire must be done this way.  I think.
 
+  # LAK:XXX I doubt this works after the Type split
   def setup_autorequire(type)
     # value returns a Symbol
     name = value(:name)

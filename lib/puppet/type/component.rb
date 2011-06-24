@@ -4,75 +4,78 @@ Puppet::Type.newtype(:component) do
     isnamevar
   end
 
-  # Override how parameters are handled so that we support the extra
-  # parameters that are used with defined resource types.
-  def [](param)
-    return super if self.class.valid_parameter?(param)
-    @extra_parameters[param.to_sym]
-  end
+  instance_methods do
 
-  # Override how parameters are handled so that we support the extra
-  # parameters that are used with defined resource types.
-  def []=(param, value)
-    return super if self.class.valid_parameter?(param)
-    @extra_parameters[param.to_sym] = value
-  end
+    # Override how parameters are handled so that we support the extra
+    # parameters that are used with defined resource types.
+    def [](param)
+      return super if self.class.valid_parameter?(param)
+      extra_parameters[param.to_sym]
+    end
 
-  # Initialize a new component
-  def initialize(*args)
-    @extra_parameters = {}
-    super
+    # Override how parameters are handled so that we support the extra
+    # parameters that are used with defined resource types.
+    def []=(param, value)
+      return super if self.class.valid_parameter?(param)
+      extra_parameters[param.to_sym] = value
+    end
 
-    catalog.alias(self, ref) if catalog and ! catalog.resource(ref)
-  end
+    def extra_parameters
+      @extra_parameters ||= {}
+    end
 
-  # Component paths are special because they function as containers.
-  def pathbuilder
-    if reference.type == "Class"
-      # 'main' is the top class, so we want to see '//' instead of
-      # its name.
-      if reference.title.to_s.downcase == "main"
-        myname = ""
+    def post_initialize
+      catalog.alias(self, ref) if catalog and ! catalog.resource(ref)
+    end
+
+    # Component paths are special because they function as containers.
+    def pathbuilder
+      if reference.type == "Class"
+        # 'main' is the top class, so we want to see '//' instead of
+        # its name.
+        if reference.title.to_s.downcase == "main"
+          myname = ""
+        else
+          myname = reference.title
+        end
       else
-        myname = reference.title
+        myname = reference.to_s
       end
-    else
-      myname = reference.to_s
-    end
-    if p = self.parent
-      return [p.pathbuilder, myname]
-    else
-      return [myname]
-    end
-  end
-
-  def ref
-    reference.to_s
-  end
-
-  def reference
-    @reference
-  end
-
-  # We want our title to just be the whole reference, rather than @title.
-  def title
-    ref
-  end
-
-  def title=(str)
-    @reference = Puppet::Resource.new(str)
-  end
-
-  def refresh
-    catalog.adjacent(self).each do |child|
-      if child.respond_to?(:refresh)
-        child.refresh
-        child.log "triggering #{:refresh}"
+      if p = self.parent
+        return [p.pathbuilder, myname]
+      else
+        return [myname]
       end
     end
-  end
 
-  def to_s
-    reference.to_s
+    def ref
+      reference.to_s
+    end
+
+    def reference
+      @reference
+    end
+
+    # We want our title to just be the whole reference, rather than @title.
+    def title
+      ref
+    end
+
+    def title=(str)
+      @reference = Puppet::Resource.new(str)
+    end
+
+    def refresh
+      catalog.adjacent(self).each do |child|
+        if child.respond_to?(:refresh)
+          child.refresh
+          child.log "triggering #{:refresh}"
+        end
+      end
+    end
+
+    def to_s
+      reference.to_s
+    end
   end
 end

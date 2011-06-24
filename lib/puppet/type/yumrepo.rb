@@ -189,13 +189,15 @@ module Puppet
     end
 
     # Return the Puppet::Util::IniConfig::Section for this yumrepo resource
-    def section
-      self.class.section(self[:name])
-    end
+    instance_methods do
+      def section
+        self.class.section(self[:name])
+      end
 
-    # Store modifications to this yumrepo resource back to disk
-    def flush
-      self.class.store
+      # Store modifications to this yumrepo resource back to disk
+      def flush
+        self.class.store
+      end
     end
 
     newparam(:name) do

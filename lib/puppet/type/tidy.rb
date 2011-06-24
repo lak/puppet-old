@@ -213,119 +213,119 @@ Puppet::Type.newtype(:tidy) do
     true
   end
 
-  def initialize(hash)
-    super
-
-    # only allow backing up into filebuckets
-    self[:backup] = false unless self[:backup].is_a? Puppet::FileBucket::Dipper
-  end
-
-  # Make a file resource to remove a given file.
-  def mkfile(path)
-    # Force deletion, so directories actually get deleted.
-    Puppet::Type.type(:file).new :path => path, :backup => self[:backup], :ensure => :absent, :force => true
-  end
-
-  def retrieve
-    # Our ensure property knows how to retrieve everything for us.
-    if obj = @parameters[:ensure]
-      return obj.retrieve
-    else
-      return {}
-    end
-  end
-
-  # Hack things a bit so we only ever check the ensure property.
-  def properties
-    []
-  end
-
-  def generate
-    return [] unless stat(self[:path])
-
-    case self[:recurse]
-    when Integer, Fixnum, Bignum, /^\d+$/
-      parameter = { :recurse => true, :recurselimit => self[:recurse] }
-    when true, :true, :inf
-      parameter = { :recurse => true }
+  instance_methods do
+    def post_initialize
+      # only allow backing up into filebuckets
+      self[:backup] = false unless self[:backup].is_a? Puppet::FileBucket::Dipper
     end
 
-    if parameter
-      files = Puppet::FileServing::Fileset.new(self[:path], parameter).files.collect do |f|
-        f == "." ? self[:path] : ::File.join(self[:path], f)
-      end
-    else
-      files = [self[:path]]
+    # Make a file resource to remove a given file.
+    def mkfile(path)
+      # Force deletion, so directories actually get deleted.
+      Puppet::Type.type(:file).new :path => path, :backup => self[:backup], :ensure => :absent, :force => true
     end
-    result = files.find_all { |path| tidy?(path) }.collect { |path| mkfile(path) }.each { |file| notice "Tidying #{file.ref}" }.sort { |a,b| b[:path] <=> a[:path] }
 
-    # No need to worry about relationships if we don't have rmdirs; there won't be
-    # any directories.
-    return result unless rmdirs?
-
-    # Now make sure that all directories require the files they contain, if all are available,
-    # so that a directory is emptied before we try to remove it.
-    files_by_name = result.inject({}) { |hash, file| hash[file[:path]] = file; hash }
-
-    files_by_name.keys.sort { |a,b| b <=> b }.each do |path|
-      dir = ::File.dirname(path)
-      next unless resource = files_by_name[dir]
-      if resource[:require]
-        resource[:require] << Puppet::Resource.new(:file, path)
+    def retrieve
+      # Our ensure property knows how to retrieve everything for us.
+      if obj = @parameters[:ensure]
+        return obj.retrieve
       else
-        resource[:require] = [Puppet::Resource.new(:file, path)]
+        return {}
       end
     end
 
-    result
-  end
-
-  # Does a given path match our glob patterns, if any?  Return true
-  # if no patterns have been provided.
-  def matches?(path)
-    return true unless self[:matches]
-
-    basename = File.basename(path)
-    flags = File::FNM_DOTMATCH | File::FNM_PATHNAME
-    if self[:matches].find {|pattern| File.fnmatch(pattern, basename, flags) }
-      return true
-    else
-      debug "No specified patterns match #{path}, not tidying"
-      return false
-    end
-  end
-
-  # Should we remove the specified file?
-  def tidy?(path)
-    return false unless stat = self.stat(path)
-
-    return false if stat.ftype == "directory" and ! rmdirs?
-
-    # The 'matches' parameter isn't OR'ed with the other tests --
-    # it's just used to reduce the list of files we can match.
-    return false if param = parameter(:matches) and ! param.tidy?(path, stat)
-
-    tested = false
-    [:age, :size].each do |name|
-      next unless param = parameter(name)
-      tested = true
-      return true if param.tidy?(path, stat)
+    # Hack things a bit so we only ever check the ensure property.
+    def properties
+      []
     end
 
-    # If they don't specify either, then the file should always be removed.
-    return true unless tested
-    false
-  end
+    def generate
+      return [] unless stat(self[:path])
 
-  def stat(path)
-    begin
-      ::File.lstat(path)
-    rescue Errno::ENOENT => error
-      info "File does not exist"
-      return nil
-    rescue Errno::EACCES => error
-      warning "Could not stat; permission denied"
-      return nil
+      case self[:recurse]
+      when Integer, Fixnum, Bignum, /^\d+$/
+        parameter = { :recurse => true, :recurselimit => self[:recurse] }
+      when true, :true, :inf
+        parameter = { :recurse => true }
+      end
+
+      if parameter
+        files = Puppet::FileServing::Fileset.new(self[:path], parameter).files.collect do |f|
+          f == "." ? self[:path] : ::File.join(self[:path], f)
+        end
+      else
+        files = [self[:path]]
+      end
+      result = files.find_all { |path| tidy?(path) }.collect { |path| mkfile(path) }.each { |file| notice "Tidying #{file.ref}" }.sort { |a,b| b[:path] <=> a[:path] }
+
+      # No need to worry about relationships if we don't have rmdirs; there won't be
+      # any directories.
+      return result unless rmdirs?
+
+      # Now make sure that all directories require the files they contain, if all are available,
+      # so that a directory is emptied before we try to remove it.
+      files_by_name = result.inject({}) { |hash, file| hash[file[:path]] = file; hash }
+
+      files_by_name.keys.sort { |a,b| b <=> b }.each do |path|
+        dir = ::File.dirname(path)
+        next unless resource = files_by_name[dir]
+        if resource[:require]
+          resource[:require] << Puppet::Resource.new(:file, path)
+        else
+          resource[:require] = [Puppet::Resource.new(:file, path)]
+        end
+      end
+
+      result
+    end
+
+    # Does a given path match our glob patterns, if any?  Return true
+    # if no patterns have been provided.
+    def matches?(path)
+      return true unless self[:matches]
+
+      basename = File.basename(path)
+      flags = File::FNM_DOTMATCH | File::FNM_PATHNAME
+      if self[:matches].find {|pattern| File.fnmatch(pattern, basename, flags) }
+        return true
+      else
+        debug "No specified patterns match #{path}, not tidying"
+        return false
+      end
+    end
+
+    # Should we remove the specified file?
+    def tidy?(path)
+      return false unless stat = self.stat(path)
+
+      return false if stat.ftype == "directory" and ! rmdirs?
+
+      # The 'matches' parameter isn't OR'ed with the other tests --
+      # it's just used to reduce the list of files we can match.
+      return false if param = parameter(:matches) and ! param.tidy?(path, stat)
+
+      tested = false
+      [:age, :size].each do |name|
+        next unless param = parameter(name)
+        tested = true
+        return true if param.tidy?(path, stat)
+      end
+
+      # If they don't specify either, then the file should always be removed.
+      return true unless tested
+      false
+    end
+
+    def stat(path)
+      begin
+        ::File.lstat(path)
+      rescue Errno::ENOENT => error
+        info "File does not exist"
+        return nil
+      rescue Errno::EACCES => error
+        warning "Could not stat; permission denied"
+        return nil
+      end
     end
   end
 end

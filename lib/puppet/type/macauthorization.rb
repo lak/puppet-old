@@ -12,21 +12,23 @@ Puppet::Type.newtype(:macauthorization) do
     ["/etc/authorization"]
   end
 
-  def munge_boolean(value)
-    case value
-    when true, "true", :true
-      :true
-    when false, "false", :false
-      :false
-    else
-      fail("munge_boolean only takes booleans")
+  instance_methods do
+    def munge_boolean(value)
+      case value
+      when true, "true", :true
+        :true
+      when false, "false", :false
+        :false
+      else
+        fail("munge_boolean only takes booleans")
+      end
     end
-  end
 
-  def munge_integer(value)
+    def munge_integer(value)
       Integer(value)
-  rescue ArgumentError
+    rescue ArgumentError
       fail("munge_integer only takes integers")
+    end
   end
 
   newparam(:name) do

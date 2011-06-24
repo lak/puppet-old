@@ -754,6 +754,8 @@ class Puppet::OldResource
     set_parameters(@original_parameters)
 
     self.validate if self.respond_to?(:validate)
+
+    post_initialize if respond_to?(:post_initialize)
   end
 
   private

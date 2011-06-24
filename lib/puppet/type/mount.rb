@@ -224,16 +224,18 @@ module Puppet
       end
     end
 
-    def refresh
-      # Only remount if we're supposed to be mounted.
-      provider.remount if self.should(:fstype) != "swap" and provider.mounted?
-    end
+    instance_methods do
+      def refresh
+        # Only remount if we're supposed to be mounted.
+        provider.remount if self.should(:fstype) != "swap" and provider.mounted?
+      end
 
-    def value(name)
-      name = symbolize(name)
-      ret = nil
-      if property = @parameters[name]
-        return property.value
+      def value(name)
+        name = symbolize(name)
+        ret = nil
+        if property = @parameters[name]
+          return property.value
+        end
       end
     end
   end

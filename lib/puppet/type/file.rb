@@ -386,12 +386,6 @@ Puppet::Type.newtype(:file) do
       return [] unless self.recurse?
 
       recurse
-      #recurse.reject do |resource|
-      #    catalog.resource(:file, resource[:path])
-      #end.each do |child|
-      #    catalog.add_resource child
-      #    catalog.relationship_graph.add_edge self, child
-      #end
     end
 
     def flush
@@ -402,9 +396,7 @@ Puppet::Type.newtype(:file) do
       @stat = nil
     end
 
-    def initialize(hash)
-      super
-
+    def post_initialize
       # If they've specified a source, we get our 'should' values
       # from it.
       unless self[:ensure]

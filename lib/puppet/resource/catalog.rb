@@ -363,7 +363,7 @@ class Puppet::Resource::Catalog < Puppet::SimpleGraph
     stage_class      = Puppet::Type.type(:stage)
     whit_class       = Puppet::Type.type(:whit)
     component_class  = Puppet::Type.type(:component)
-    containers = vertices.find_all { |v| (v.is_a?(component_class) or v.is_a?(stage_class)) and vertex?(v) }
+    containers = vertices.find_all { |v| ([:component, :stage].include?(v.resource_type.name)) and vertex?(v) }
     #
     # These two hashes comprise the aforementioned attention to the possible
     #   case of containers that contain / depend on other containers; they map

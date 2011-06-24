@@ -106,7 +106,7 @@ module Puppet::Util::ProviderFeatures
     unless defined?(@feature_module)
       @features ||= {}
       @feature_module = ::Module.new
-      const_set("FeatureModule", @feature_module)
+      #const_set("FeatureModule", @feature_module)
       features = @features
       # Create a feature? method that can be passed a feature name and
       # determine if the feature is present.

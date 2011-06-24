@@ -27,7 +27,7 @@ class Puppet::Parser::Resource < Puppet::Resource
 
   # Determine whether the provided parameter name is a relationship parameter.
   def self.relationship_parameter?(name)
-    @relationship_names ||= Puppet::Type.relationship_params.collect { |p| p.name }
+    @relationship_names ||= Puppet::OldType.relationship_params.collect { |p| p.name }
     @relationship_names.include?(name)
   end
 
@@ -272,7 +272,7 @@ class Puppet::Parser::Resource < Puppet::Resource
   def add_metaparams
     compat_mode = metaparam_compatibility_mode?
 
-    Puppet::Type.eachmetaparam do |name|
+    Puppet::OldType.eachmetaparam do |name|
       next unless self.class.relationship_parameter?(name)
       add_backward_compatible_relationship_param(name) if compat_mode
     end

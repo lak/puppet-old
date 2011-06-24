@@ -1,8 +1,6 @@
 # A simple class that tells us when a file has changed and thus whether we
 # should reload it
 
-require 'puppet'
-
 module Puppet
   class NoSuchFile < Puppet::Error; end
   class Util::LoadedFile

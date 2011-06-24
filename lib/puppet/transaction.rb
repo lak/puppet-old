@@ -101,7 +101,7 @@ class Puppet::Transaction
 
     begin
       relationship_graph.traverse do |resource|
-        if resource.is_a?(Puppet::Type::Component)
+        if resource.resource_type.name == :component
           Puppet.warning "Somehow left a component in the relationship graph"
         else
           seconds = thinmark { eval_resource(resource) }

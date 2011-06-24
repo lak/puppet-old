@@ -8,11 +8,14 @@ require 'puppet/util/diff'
 require 'puppet/util/checksums'
 require 'puppet/network/client'
 require 'puppet/util/backups'
+require 'puppet/util/cacher'
 
 Puppet::Type.newtype(:file) do
-  include Puppet::Util::MethodHelper
-  include Puppet::Util::Checksums
-  include Puppet::Util::Backups
+  extend Puppet::Util::MethodHelper
+  extend Puppet::Util::Checksums
+  extend Puppet::Util::Backups
+  #extend Puppet::Util::Cacher # for cached_attr()
+
   @doc = "Manages local files, including setting ownership and
     permissions, creation of both files and directories, and
     retrieving entire files from remote servers.  As Puppet matures, it
@@ -674,7 +677,10 @@ Puppet::Type.newtype(:file) do
   # use either 'stat' or 'lstat', and we expect the properties to use the
   # resulting stat object accordingly (mostly by testing the 'ftype'
   # value).
-  cached_attr(:stat) do
+  # XXX This doesn't cache like it should, but I couldn't get cached_attr
+  # to work with type instances
+  # cached_attr(:stat) do
+  def stat
     method = :stat
 
     # Files are the only types that support links
@@ -739,8 +745,6 @@ Puppet::Type.newtype(:file) do
 
   end
 
-  private
-
   # Should we validate the checksum of the file we're writing?
   def validate_checksum?
     self[:checksum] !~ /time/
@@ -760,8 +764,6 @@ Puppet::Type.newtype(:file) do
   def write_content(file)
     (content = property(:content)) && content.write(file)
   end
-
-  private
 
   def write_temporary_file?
     # unfortunately we don't know the source file size before fetching it

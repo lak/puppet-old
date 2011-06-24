@@ -83,6 +83,7 @@ class Puppet::Util::Autoload
       rescue SystemExit,NoMemoryError
         raise
       rescue Exception => detail
+        puts detail.backtrace
         puts detail.backtrace if Puppet[:trace]
         raise Puppet::Error, "Could not autoload #{name}: #{detail}"
       end
@@ -114,6 +115,7 @@ class Puppet::Util::Autoload
       rescue SystemExit,NoMemoryError
         raise
       rescue Exception => detail
+        puts detail.backtrace
         puts detail.backtrace if Puppet[:trace]
         raise Puppet::Error, "Could not autoload #{file}: #{detail}"
       end

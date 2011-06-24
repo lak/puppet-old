@@ -1,11 +1,4 @@
-
-require 'puppet'
-require 'puppet/type'
-require 'puppet/transaction'
-
 Puppet::Type.newtype(:component) do
-  include Enumerable
-
   newparam(:name) do
     desc "The name of the component.  Generally optional."
     isnamevar
@@ -57,6 +50,10 @@ Puppet::Type.newtype(:component) do
     reference.to_s
   end
 
+  def reference
+    @reference
+  end
+
   # We want our title to just be the whole reference, rather than @title.
   def title
     ref
@@ -78,8 +75,4 @@ Puppet::Type.newtype(:component) do
   def to_s
     reference.to_s
   end
-
-  private
-
-  attr_reader :reference
 end

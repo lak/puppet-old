@@ -80,7 +80,7 @@ class Puppet::Util::Autoload
         name = symbolize(name)
         loaded name, file
         return true
-      rescue SystemExit,NoMemoryError
+      rescue SystemExit,NoMemoryError => detail
         raise
       rescue Exception => detail
         puts detail.backtrace

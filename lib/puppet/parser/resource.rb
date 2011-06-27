@@ -27,7 +27,7 @@ class Puppet::Parser::Resource < Puppet::Resource
 
   # Determine whether the provided parameter name is a relationship parameter.
   def self.relationship_parameter?(name)
-    @relationship_names ||= Puppet::OldType.relationship_params.collect { |p| p.name }
+    @relationship_names ||= Puppet::Resource::Type.relationship_params.collect { |p| p.name }
     @relationship_names.include?(name)
   end
 
@@ -80,14 +80,12 @@ class Puppet::Parser::Resource < Puppet::Resource
   def evaluate
     return if evaluated?
     @evaluated = true
-    if klass = resource_type and ! builtin_type?
+    if klass = resource_type
       finish
-      evaluated_code = klass.evaluate_code(self)
+      evaluated_code = Puppet::Parser::ResourceTypeHarness.evaluate_code(klass, self)
       add_edge_to_stage
 
       return evaluated_code
-    elsif builtin?
-      devfail "Cannot evaluate a builtin type (#{type})"
     else
       self.fail "Cannot find definition #{type}"
     end
@@ -272,7 +270,7 @@ class Puppet::Parser::Resource < Puppet::Resource
   def add_metaparams
     compat_mode = metaparam_compatibility_mode?
 
-    Puppet::OldType.eachmetaparam do |name|
+    Puppet::Resource::Type.eachmetaparam do |name|
       next unless self.class.relationship_parameter?(name)
       add_backward_compatible_relationship_param(name) if compat_mode
     end

@@ -140,7 +140,7 @@ class Puppet::Resource
 
   # Is this a builtin resource type?
   def builtin_type?
-    resource_type.is_a?(Puppet::OldType)
+    resource_type.is_a?(Puppet::Resource::Type)
   end
 
   # Iterate over each param/value pair, as required for Enumerable.
@@ -231,6 +231,9 @@ class Puppet::Resource
 
   # Produce a simple hash of our parameters.
   def to_hash
+    if parse_title.is_a?(Array)
+      puts self
+    end
     parse_title.merge parameters
   end
 
@@ -415,7 +418,8 @@ class Puppet::Resource
   def parse_title
     h = {}
     type = resource_type
-    if type.respond_to? :title_patterns
+    # Host classes don't need any params, and thus don't need namevars, necessarily.
+    if type.respond_to? :title_patterns and ! type.title_patterns.empty?
       type.title_patterns.each { |regexp, symbols_and_lambdas|
         if captures = regexp.match(title.to_s)
           symbols_and_lambdas.zip(captures[1..-1]).each { |symbol_and_lambda,capture|

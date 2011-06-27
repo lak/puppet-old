@@ -66,7 +66,7 @@ class Puppet::OldResource
   def [](name)
     name = attr_alias(name)
 
-    fail("Invalid parameter #{name}(#{name.inspect})") unless resource_type.validattr?(name)
+    fail("Invalid parameter #{name}(#{name.inspect})") unless resource_type.valid_parameter?(name)
 
     if name == :name && nv = name_var
       name = nv
@@ -87,7 +87,7 @@ class Puppet::OldResource
   def []=(name,value)
     name = attr_alias(name)
 
-    fail("Invalid parameter #{name}") unless resource_type.validattr?(name)
+    fail("Invalid parameter #{name}") unless resource_type.valid_parameter?(name)
 
     if name == :name && nv = name_var
       name = nv
@@ -361,7 +361,7 @@ class Puppet::OldResource
     # Provide the name, so we know we'll always refer to a real thing
     result[:name] = self[:name] unless self[:name] == title
 
-    if ensure_prop = property(:ensure) or (resource_type.validattr?(:ensure) and ensure_prop = newattr(:ensure))
+    if ensure_prop = property(:ensure) or (resource_type.valid_parameter?(:ensure) and ensure_prop = newattr(:ensure))
       result[:ensure] = ensure_state = ensure_prop.retrieve
     else
       ensure_state = nil
@@ -533,7 +533,7 @@ class Puppet::OldResource
     # Provide the name, so we know we'll always refer to a real thing
     result[:name] = self[:name] unless self[:name] == title
 
-    if ensure_prop = property(:ensure) or (resource_type.validattr?(:ensure) and ensure_prop = newattr(:ensure))
+    if ensure_prop = property(:ensure) or (resource_type.valid_parameter?(:ensure) and ensure_prop = newattr(:ensure))
       result[:ensure] = ensure_state = ensure_prop.retrieve
     else
       ensure_state = nil
@@ -719,7 +719,7 @@ class Puppet::OldResource
   def initialize(type, resource)
     @resource_type = type
 
-    extend(Puppet::OldType.metaparam_module)
+    extend(Puppet::Resource::Type.metaparam_module)
     extend(type.instance_module)
 
     raise Puppet::DevError, "Got TransObject instead of Resource or hash" if resource.is_a?(Puppet::TransObject)

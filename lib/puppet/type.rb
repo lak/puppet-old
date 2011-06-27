@@ -3,10 +3,6 @@ require 'puppet/util/log'
 require 'puppet/util/metric'
 require 'puppet/util/autoload'
 
-###############################
-# Code related to managing resource instances.
-require 'puppet/transportable'
-
 class Puppet::Type
   extend Puppet::Util # for symbolize()
   extend Puppet::Util::MethodHelper # for symbolize_options()
@@ -60,13 +56,13 @@ class Puppet::Type
     end
 
     # Then create the instance
-    klass = parent || Puppet::OldType
-    type = klass.new(name)
-
-    type.instance_eval(&block)
+    klass = parent || Puppet::Resource::Type
+    type = klass.new(:definition, name)
 
     # XXX This will overwrite
-    @types[type.name] = type
+    @types[type.name.to_s.downcase.to_sym] = type
+
+    type.instance_eval(&block)
 
     # Now define a "new<type>" method for convenience.
     if respond_to? newmethod
@@ -143,5 +139,5 @@ class Puppet::Type
   end
 end
 
-require 'puppet/oldtype'
+require 'puppet/resource/type'
 require 'puppet/oldresource'

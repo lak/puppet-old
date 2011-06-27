@@ -4,8 +4,81 @@ require 'puppet/util/errors'
 require 'puppet/util/inline_docs'
 require 'puppet/parser/ast/leaf'
 require 'puppet/dsl'
+require 'puppet/util/warnings'
+require 'puppet/parameter'
+require 'puppet/util/classgen'
 
 class Puppet::Resource::Type
+  extend Puppet::Util # for symbolize()
+  extend Puppet::Util::ClassGen # for genclass()
+
+  def self.metaparam_module
+    @metaparam_module ||= Module.new
+  end
+
+  def self.relationship_params
+    Puppet::Resource::Type::RelationshipMetaparam.subclasses
+  end
+
+  def self.eachmetaparam
+    @@metaparams.each { |p| yield p.name }
+  end
+
+  # Is the parameter in question a meta-parameter?
+  def self.metaparam?(param)
+    @@metaparamhash.include?(symbolize(param))
+  end
+
+  # Find the metaparameter class associated with a given metaparameter name.
+  def self.metaparamclass(name)
+    @@metaparamhash[symbolize(name)]
+  end
+
+  def self.metaparams
+    @@metaparams.collect { |param| param.name }
+  end
+
+  def self.metaparamdoc(metaparam)
+    @@metaparamhash[metaparam].doc
+  end
+
+  # Create a new metaparam.  Requires a block and a name, stores it in the
+  # @parameters array, and does some basic checking on it.
+  def self.newmetaparam(name, options = {}, &block)
+    @@metaparams ||= []
+    @@metaparamhash ||= {}
+    name = symbolize(name)
+
+    param = genclass(
+      name,
+      :parent => options[:parent] || Puppet::Parameter,
+      :prefix => "MetaParam",
+      :hash => @@metaparamhash,
+      :array => @@metaparams,
+      :attributes => options[:attributes],
+
+      &block
+    )
+
+    # Grr.
+    param.required_features = options[:required_features] if options[:required_features]
+
+    # Directly pasting code, since doing the method extraction for this is too hard
+    # in the current phase.
+    if options[:boolean]
+      metaparam_module.define_method(name.to_s + "?") do
+        val = self[name]
+        if val == :true or val == true
+          return true
+        end
+      end
+    end
+
+    param.metaparam = true
+
+    param
+  end
+
   Puppet::ResourceType = self
   include Puppet::Util::InlineDocs
   include Puppet::Util::Warnings
@@ -52,6 +125,237 @@ class Puppet::Resource::Type
     to_pson_data_hash.to_pson(*args)
   end
 
+  attr_reader :properties
+  include Puppet::Util::Warnings
+
+  # All parameters, in the appropriate order.  The key_attributes come first, then
+  # the provider, then the properties, and finally the params and metaparams
+  # in the order they were specified in the files.
+  def allattrs
+    key_attributes | (parameters & [:provider]) | properties.collect { |property| property.name } | parameters | self.class.metaparams
+  end
+
+  # Retrieve an attribute alias, if there is one.
+  def attr_alias(param)
+    @attr_aliases[symbolize(param)]
+  end
+
+  # Create an alias to an existing attribute.  This will cause the aliased
+  # attribute to be valid when setting and retrieving values on the instance.
+  def set_attr_alias(hash)
+    hash.each do |new, old|
+      @attr_aliases[symbolize(new)] = symbolize(old)
+    end
+  end
+
+  # Find the class associated with any given attribute.
+  def attrclass(name)
+    @attrclasses ||= {}
+
+    # We cache the value, since this method gets called such a huge number
+    # of times (as in, hundreds of thousands in a given run).
+    unless @attrclasses.include?(name)
+      @attrclasses[name] = case self.attrtype(name)
+      when :property; @validproperties[name]
+      when :meta; @@metaparamhash[name]
+      when :param; @paramhash[name]
+      end
+    end
+    @attrclasses[name]
+  end
+
+  # What type of parameter are we dealing with? Cache the results, because
+  # this method gets called so many times.
+  def attrtype(attr)
+    @attrtypes ||= {}
+    unless @attrtypes.include?(attr)
+      @attrtypes[attr] = case
+        when @validproperties.include?(attr); :property
+        when @paramhash.include?(attr); :param
+        when @@metaparamhash.include?(attr); :meta
+        end
+    end
+
+    @attrtypes[attr]
+  end
+
+  # Create the 'ensure' class.  This is a separate method so other types
+  # can easily call it and create their own 'ensure' values.
+  def ensurable(&block)
+    if block_given?
+      self.newproperty(:ensure, :parent => Puppet::Property::Ensure, &block)
+    else
+      self.newproperty(:ensure, :parent => Puppet::Property::Ensure) do
+        self.defaultvalues
+      end
+    end
+  end
+
+  # Should we add the 'ensure' property to this class?
+  def ensurable?
+    # If the class has all three of these methods defined, then it's
+    # ensurable.
+    ens = [:exists?, :create, :destroy].inject { |set, method|
+      set &&= respond_to?(method)
+    }
+
+    ens
+  end
+
+  def apply_to_device
+    @apply_to = :device
+  end
+
+  def apply_to_host
+    @apply_to = :host
+  end
+
+  def apply_to_all
+    @apply_to = :both
+  end
+
+  def apply_to
+    @apply_to ||= :host
+  end
+
+  def can_apply_to(target)
+    [ target == :device ? :device : :host, :both ].include?(apply_to)
+  end
+
+  # Deal with any options passed into parameters.
+  def handle_param_options(param, options)
+    options.each do |name, value|
+      case name
+      when :boolean
+        # If it's a boolean parameter, create a method to test the value easily
+        instance_module.define_method(param.name.to_s + "?") do
+          val = self[param.name]
+          if val == :true or val == true
+            return true
+          end
+        end
+      when :attributes; nil
+      when :parent; nil
+      when :required_features; param.required_features = value
+      when :namevar; param.isnamevar
+      else
+        raise "Invalid parameter option #{name}"
+      end
+    end
+  end
+
+  def key_attribute_parameters
+    @key_attribute_parameters ||= (
+      params = @parameters.find_all { |param|
+        param.isnamevar? or param.name == :name
+      }
+    )
+  end
+
+  def key_attributes
+    key_attribute_parameters.collect { |p| p.name }
+  end
+
+  def title_patterns
+    case key_attributes.length
+    when 0; []
+    when 1;
+      identity = lambda {|x| x}
+      [ [ /(.*)/m, [ [key_attributes.first, identity ] ] ] ]
+    else
+      raise Puppet::DevError,"you must specify title patterns when there are two or more key attributes"
+    end
+  end
+
+  # Create a new parameter.  Requires a block and a name, stores it in the
+  # @parameters array, and does some basic checking on it.
+  def newparam(name, options = {}, &block)
+    options[:attributes] ||= {}
+
+      param = genclass(
+        name,
+      :parent => options[:parent] || Puppet::Parameter,
+      :attributes => options[:attributes],
+      :block => block,
+      :constant => "Puppet::Type::#{self.name.to_s.capitalize}Parameter#{name.to_s.capitalize}",
+      :array => @parameters,
+      :hash => @paramhash
+    )
+
+    handle_param_options(param, options)
+
+    param
+  end
+
+  # Create a new property. The first parameter must be the name of the property;
+  # this is how users will refer to the property when creating new instances.
+  # The second parameter is a hash of options; the options are:
+  # * <tt>:parent</tt>: The parent class for the property.  Defaults to Puppet::Property.
+  # * <tt>:retrieve</tt>: The method to call on the provider or @parent object (if
+  #   the provider is not set) to retrieve the current value.
+  def newproperty(name, options = {}, &block)
+    name = symbolize(name)
+
+    # This is here for types that might still have the old method of defining
+    # a parent class.
+    unless options.is_a? Hash
+      raise Puppet::DevError,
+        "Options must be a hash, not #{options.inspect}"
+    end
+
+    raise Puppet::DevError, "Class #{self.name} already has a property named #{name}" if @validproperties.include?(name)
+
+    if parent = options[:parent]
+      options.delete(:parent)
+    else
+      parent = Puppet::Property
+    end
+
+    # We have to create our own, new block here because we want to define
+    # an initial :retrieve method, if told to, and then eval the passed
+    # block if available.
+    prop = genclass(name, :parent => parent, :hash => @validproperties, :attributes => options) do
+      # If they've passed a retrieve method, then override the retrieve
+      # method on the class.
+      if options[:retrieve]
+        singleton_class.define_method(:retrieve) do
+          provider.send(options[:retrieve])
+        end
+      end
+
+      class_eval(&block) if block
+    end
+
+    # If it's the 'ensure' property, always put it first.
+    if name == :ensure
+      @properties.unshift prop
+    else
+      @properties << prop
+    end
+
+    prop
+  end
+
+  def paramdoc(param)
+    @paramhash[param].doc
+  end
+
+  # Return the parameter names
+  def parameters
+    return [] unless defined?(@parameters)
+    @parameters.collect { |klass| klass.name }
+  end
+
+  # Find the parameter class associated with a given parameter name.
+  def paramclass(name)
+    @paramhash[name]
+  end
+
+  # Return the property class associated with a name
+  def propertybyname(name)
+    @validproperties[name]
+  end
+
   # Are we a child of the passed class?  Do a recursive search up our
   # parentage tree to figure it out.
   def child_of?(klass)
@@ -60,21 +364,13 @@ class Puppet::Resource::Type
     return(klass == parent_type ? true : parent_type.child_of?(klass))
   end
 
-  # Now evaluate the code associated with this class or definition.
-  def evaluate_code(resource)
+  # the Type class attribute accessors
+  attr_reader :name
+  attr_accessor :self_refresh
+  include Enumerable, Puppet::Util::ClassGen
 
-    static_parent = evaluate_parent_type(resource)
-    scope = static_parent || resource.scope
-
-    scope = scope.newscope(:namespace => namespace, :source => self, :resource => resource, :dynamic => !static_parent) unless resource.title == :main
-    scope.compiler.add_class(name) unless definition?
-
-    set_resource_parameters(resource, scope)
-
-    code.safeevaluate(scope) if code
-
-    evaluate_ruby_code(resource, scope) if ruby_code
-  end
+  include Puppet::Util
+  include Puppet::Util::Logging
 
   def initialize(type, name, options = {})
     @type = type.to_s.downcase.to_sym
@@ -92,6 +388,33 @@ class Puppet::Resource::Type
     set_arguments(options[:arguments])
 
     @module_name = options[:module_name]
+
+    ### Old type stuff
+    @aliases = Hash.new
+
+    @instance_module = Module.new
+
+    @defaults = {}
+
+    @parameters ||= []
+
+    @validproperties = {}
+    @properties = []
+    @parameters = []
+    @paramhash = {}
+
+    @attr_aliases = {}
+
+    @paramdoc = Hash.new { |hash,key|
+      key = key.intern if key.is_a?(String)
+      if hash.include?(key)
+        hash[key]
+      else
+        "Param Documentation for #{key} not found"
+      end
+    }
+
+    @doc ||= ""
   end
 
   # This is only used for node names, and really only when the node name
@@ -138,47 +461,6 @@ class Puppet::Resource::Type
     end
   end
 
-  # Make an instance of the resource type, and place it in the catalog
-  # if it isn't in the catalog already.  This is only possible for
-  # classes and nodes.  No parameters are be supplied--if this is a
-  # parameterized class, then all parameters take on their default
-  # values.
-  def ensure_in_catalog(scope, parameters=nil)
-    type == :definition and raise ArgumentError, "Cannot create resources for defined resource types"
-    resource_type = type == :hostclass ? :class : :node
-
-    # Do nothing if the resource already exists; this makes sure we don't
-    # get multiple copies of the class resource, which helps provide the
-    # singleton nature of classes.
-    # we should not do this for classes with parameters
-    # if parameters are passed, we should still try to create the resource
-    # even if it exists so that we can fail
-    # this prevents us from being able to combine param classes with include
-    if resource = scope.catalog.resource(resource_type, name) and !parameters
-      return resource
-    end
-    resource = Puppet::Parser::Resource.new(resource_type, name, :scope => scope, :source => self)
-    if parameters
-      parameters.each do |k,v|
-        resource.set_parameter(k,v)
-      end
-    end
-    instantiate_resource(scope, resource)
-    scope.compiler.add_resource(scope, resource)
-    resource
-  end
-
-  def instantiate_resource(scope, resource)
-    # Make sure our parent class has been evaluated, if we have one.
-    if parent && !scope.catalog.resource(resource.type, parent)
-      parent_type(scope).ensure_in_catalog(scope)
-    end
-
-    if ['Class', 'Node'].include? resource.type
-      scope.catalog.tag(*resource.tags)
-    end
-  end
-
   def name
     return @name unless @name.is_a?(Regexp)
     @name.source.downcase.gsub(/[^-\w:.]/,'').sub(/^\.+/,'')
@@ -205,6 +487,7 @@ class Puppet::Resource::Type
   #
   # ...and then the rest of the changes around passing in scope reverted.
   #
+  # XXX This is the only place where we refer to 'scope' in this class...
   def parent_type(scope = nil)
     return nil unless parent
 
@@ -218,58 +501,26 @@ class Puppet::Resource::Type
     @parent_type
   end
 
-  # Set any arguments passed by the resource as variables in the scope.
-  def set_resource_parameters(resource, scope)
-    set = {}
-    resource.to_hash.each do |param, value|
-      param = param.to_sym
-      fail Puppet::ParseError, "#{resource.ref} does not accept attribute #{param}" unless valid_parameter?(param)
-
-      exceptwrap { scope.setvar(param.to_s, value) }
-
-      set[param] = true
-    end
-
-    if @type == :hostclass
-      scope.setvar("title", resource.title.to_s.downcase) unless set.include? :title
-      scope.setvar("name",  resource.name.to_s.downcase ) unless set.include? :name
-    else
-      scope.setvar("title", resource.title              ) unless set.include? :title
-      scope.setvar("name",  resource.name               ) unless set.include? :name
-    end
-    scope.setvar("module_name", module_name) if module_name and ! set.include? :module_name
-
-    if caller_name = scope.parent_module_name and ! set.include?(:caller_module_name)
-      scope.setvar("caller_module_name", caller_name)
-    end
-    scope.class_set(self.name,scope) if hostclass? or node?
-    # Verify that all required arguments are either present or
-    # have been provided with defaults.
-    arguments.each do |param, default|
-      param = param.to_sym
-      next if set.include?(param)
-
-      # Even if 'default' is a false value, it's an AST value, so this works fine
-      fail Puppet::ParseError, "Must pass #{param} to #{resource.ref}" unless default
-
-      value = default.safeevaluate(scope)
-      scope.setvar(param.to_s, value)
-
-      # Set it in the resource, too, so the value makes it to the client.
-      resource[param] = value
-    end
-
-  end
-
   # Check whether a given argument is valid.
-  def valid_parameter?(param)
-    param = param.to_s
+  def valid_parameter?(name)
+    name = symbolize(name)
+    return true if name == :name
+    @valid_parameters ||= {}
 
-    return true if param == "name"
-    return true if Puppet::Type.metaparam?(param)
-    return false unless defined?(@arguments)
-    return(arguments.include?(param) ? true : false)
+    unless @valid_parameters.include?(name)
+      @valid_parameters[name] = !!(self.validproperty?(name) or self.validparameter?(name) or self.class.metaparam?(name))
+    end
+
+    @valid_parameters[name]
   end
+#  def valid_parameter?(param)
+#    param = param.to_s
+#
+#    return true if param == "name"
+#    return true if Puppet::Type.metaparam?(param)
+#    return false unless defined?(@arguments)
+#    return(arguments.include?(param) ? true : false)
+#  end
 
   def set_arguments(arguments)
     @arguments = {}
@@ -282,6 +533,328 @@ class Puppet::Resource::Type
     end
   end
 
+  # does the name reflect a valid property?
+  def validproperty?(name)
+    name = symbolize(name)
+    @validproperties.include?(name) && @validproperties[name]
+  end
+
+  # Return the list of validproperties
+  def validproperties
+    return {} unless defined?(@parameters)
+
+    @validproperties.keys
+  end
+
+  # does the name reflect a valid parameter?
+  def validparameter?(name)
+    raise Puppet::DevError, "Class #{self} has not defined parameters" unless defined?(@parameters)
+    !!(@paramhash.include?(name) or @@metaparamhash.include?(name))
+  end
+
+  # Is this type's name isomorphic with the object?  That is, if the
+  # name conflicts, does it necessarily mean that the objects conflict?
+  # Defaults to true.
+  def isomorphic?
+    if defined?(@isomorphic)
+      return @isomorphic
+    else
+      return true
+    end
+  end
+
+  # Retrieve all known instances.  Either requires providers or must be overridden.
+  def instances
+    raise Puppet::DevError, "#{self.name} has no providers and has not overridden 'instances'" if provider_hash.empty?
+
+    # Put the default provider first, then the rest of the suitable providers.
+    provider_instances = {}
+    providers_by_source.collect do |provider|
+      provider.instances.collect do |instance|
+        # We always want to use the "first" provider instance we find, unless the resource
+        # is already managed and has a different provider set
+        if other = provider_instances[instance.name]
+          Puppet.warning "%s %s found in both %s and %s; skipping the %s version" %
+            [self.name.to_s.capitalize, instance.name, other.resource_type.name, instance.resource_type.name, instance.resource_type.name]
+          next
+        end
+        provider_instances[instance.name] = instance
+
+        new(:name => instance.name, :provider => instance, :audit => :all)
+      end
+    end.flatten.compact
+  end
+
+  # Return a list of one suitable provider per source, with the default provider first.
+  def providers_by_source
+    # Put the default provider first, then the rest of the suitable providers.
+    sources = []
+    [defaultprovider, suitableprovider].flatten.uniq.collect do |provider|
+      next if sources.include?(provider.source)
+
+      sources << provider.source
+      provider
+    end.compact
+  end
+
+  def new(hash)
+    Puppet::OldResource.new(self, hash)
+  end
+
+  ###############################
+  # All of the provider plumbing for the resource types.
+  require 'puppet/provider'
+  require 'puppet/util/provider_features'
+
+  # Add the feature handling module.
+  include Puppet::Util::ProviderFeatures
+
+  # the Type class attribute accessors
+  attr_accessor :providerloader
+  attr_writer :defaultprovider
+
+  # Find the default provider.
+  def defaultprovider
+    unless @defaultprovider
+      suitable = suitableprovider
+
+      # Find which providers are a default for this system.
+      defaults = suitable.find_all { |provider| provider.default? }
+
+      # If we don't have any default we use suitable providers
+      defaults = suitable if defaults.empty?
+      max = defaults.collect { |provider| provider.specificity }.max
+      defaults = defaults.find_all { |provider| provider.specificity == max }
+
+      retval = nil
+      if defaults.length > 1
+        Puppet.warning(
+          "Found multiple default providers for #{self.name}: #{defaults.collect { |i| i.name.to_s }.join(", ")}; using #{defaults[0].name}"
+        )
+        retval = defaults.shift
+      elsif defaults.length == 1
+        retval = defaults.shift
+      else
+        raise Puppet::DevError, "Could not find a default provider for #{self.name}"
+      end
+
+      @defaultprovider = retval
+    end
+
+    @defaultprovider
+  end
+
+  def provider_hash
+    Puppet::Type.provider_hash_by_type(self.name)
+  end
+
+  # Retrieve a provider by name.
+  def provider(name)
+    name = Puppet::Util.symbolize(name)
+
+    # If we don't have it yet, try loading it.
+    @providerloader.load(name) unless provider_hash.has_key?(name)
+    provider_hash[name]
+  end
+
+  # Just list all of the providers.
+  def providers
+    provider_hash.keys
+  end
+
+  def validprovider?(name)
+    name = Puppet::Util.symbolize(name)
+
+    (provider_hash.has_key?(name) && provider_hash[name].suitable?)
+  end
+
+  # Create a new provider of a type.  This method must be called
+  # directly on the type that it's implementing.
+  def provide(name, options = {}, &block)
+    name = Puppet::Util.symbolize(name)
+
+    if obj = provider_hash[name]
+      Puppet.debug "Reloading #{name} #{self.name} provider"
+      unprovide(name)
+    end
+
+    parent = if pname = options[:parent]
+      options.delete(:parent)
+      if pname.is_a? Class
+        pname
+      else
+        if provider = self.provider(pname)
+          provider
+        else
+          raise Puppet::DevError,
+            "Could not find parent provider #{pname} of #{name}"
+        end
+      end
+    else
+      Puppet::Provider
+    end
+
+    options[:resource_type] ||= self
+
+    self.providify
+
+    provider = genclass(
+      name,
+      :parent => parent,
+      :hash => provider_hash,
+      :prefix => "Provider",
+      :constant => "Puppet::Type::#{self.name.to_s.capitalize}::Provider#{name.to_s.capitalize}",
+      :block => block,
+      :include => feature_module,
+      :extend => feature_module,
+      :attributes => options
+    )
+
+    provider
+  end
+
+  # Make sure we have a :provider parameter defined.  Only gets called if there
+  # are providers.
+  def providify
+    return if @paramhash.has_key? :provider
+
+    newparam(:provider) do
+      desc "The specific backend for #{self.name.to_s} to use. You will
+        seldom need to specify this --- Puppet will usually discover the
+        appropriate provider for your platform."
+
+      # This is so we can refer back to the type to get a list of
+      # providers for documentation.
+      class << self
+        attr_accessor :parenttype
+      end
+
+      # We need to add documentation for each provider.
+      def doc
+        @doc + "  Available providers are:\n\n" + parenttype.providers.sort { |a,b|
+          a.to_s <=> b.to_s
+        }.collect { |i|
+          "* **#{i}**: #{parenttype().provider(i).doc}"
+        }.join("\n")
+      end
+
+      defaultto {
+        @resource.resource_type.defaultprovider.name
+      }
+
+      validate do |provider_class|
+        provider_class = provider_class[0] if provider_class.is_a? Array
+        provider_class = provider_class.class.name if provider_class.is_a?(Puppet::Provider)
+
+        unless provider = @resource.resource_type.provider(provider_class)
+          raise ArgumentError, "Invalid #{@resource.resource_type.name} provider '#{provider_class}'"
+        end
+      end
+
+      munge do |provider|
+        provider = provider[0] if provider.is_a? Array
+        provider = provider.intern if provider.is_a? String
+        @resource.provider = provider
+
+        if provider.is_a?(Puppet::Provider)
+          provider.class.name
+        else
+          provider
+        end
+      end
+    end.parenttype = self
+  end
+
+  def unprovide(name)
+    if provider_hash.has_key? name
+
+      rmclass(
+        name,
+        :hash => provider_hash,
+
+        :prefix => "Provider"
+      )
+      if @defaultprovider and @defaultprovider.name == name
+        @defaultprovider = nil
+      end
+    end
+  end
+
+  # Return an array of all of the suitable providers.
+  def suitableprovider
+    providerloader.loadall if provider_hash.empty?
+    provider_hash.find_all { |name, provider|
+      provider.suitable?
+    }.collect { |name, provider|
+      provider
+    }.reject { |p| p.name == :fake } # For testing
+  end
+
+  ###############################
+  # All of the relationship code.
+
+  # Specify a block for generating a list of objects to autorequire.  This
+  # makes it so that you don't have to manually specify things that you clearly
+  # require.
+  def autorequire(name, &block)
+    @autorequires ||= {}
+    @autorequires[name] = block
+  end
+
+  # Yield each of those autorequires in turn, yo.
+  def eachautorequire
+    @autorequires ||= {}
+    @autorequires.each { |type, block|
+      yield(type, block)
+    }
+  end
+
+  def to_s
+    if defined?(@name)
+      "Puppet::Type::#{@name.to_s.capitalize}"
+    else
+      super
+    end
+  end
+
+  # Create a block to validate that our object is set up entirely.  This will
+  # be run before the object is operated on.
+  def validate(&block)
+    instance_module.define_method(:validate, &block)
+    #@validate = block
+  end
+
+  # Convert a simple hash into a Resource instance.
+  def hash2resource(hash)
+    hash = hash.inject({}) { |result, ary| result[ary[0].to_sym] = ary[1]; result }
+
+    title = hash.delete(:title)
+    title ||= hash[:name]
+    title ||= hash[key_attributes.first] if key_attributes.length == 1
+
+    raise Puppet::Error, "Title or name must be provided" unless title
+
+    # Now create our resource.
+    resource = Puppet::Resource.new(self.name, title)
+    [:catalog].each do |attribute|
+      if value = hash[attribute]
+        hash.delete(attribute)
+        resource.send(attribute.to_s + "=", value)
+      end
+    end
+
+    hash.each do |param, value|
+      resource[param] = value
+    end
+    resource
+  end
+
+  def instance_methods(&block)
+    @instance_module.class_eval(&block)
+  end
+
+  attr_reader :instance_module
+
   private
 
   def convert_from_ast(name)
@@ -293,26 +866,12 @@ class Puppet::Resource::Type
     end
   end
 
-  def evaluate_parent_type(resource)
-    return unless klass = parent_type(resource.scope) and parent_resource = resource.scope.compiler.catalog.resource(:class, klass.name) || resource.scope.compiler.catalog.resource(:node, klass.name)
-    parent_resource.evaluate unless parent_resource.evaluated?
-    parent_scope(resource.scope, klass)
-  end
-
-  def evaluate_ruby_code(resource, scope)
-    Puppet::DSL::ResourceAPI.new(resource, scope, ruby_code).evaluate
-  end
-
   # Split an fq name into a namespace and name
   def namesplit(fullname)
     ary = fullname.split("::")
     n = ary.pop || ""
     ns = ary.join("::")
     return ns, n
-  end
-
-  def parent_scope(scope, klass)
-    scope.class_scope(klass) || raise(Puppet::DevError, "Could not find scope for #{klass.name}")
   end
 
   def set_name_and_namespace(name)
@@ -340,3 +899,7 @@ class Puppet::Resource::Type
   end
 end
 
+require 'puppet/provider'
+require 'puppet/resource/type/metaparameters'
+# Always load these types.
+Puppet::Type.type(:component)

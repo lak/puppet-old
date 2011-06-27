@@ -6,6 +6,7 @@ require 'puppet/resource/catalog'
 require 'puppet/util/errors'
 
 require 'puppet/resource/type_collection_helper'
+require 'puppet/parser/resource_type_harness'
 
 # Maintain a graph of scopes, along with a bunch of data
 # about the individual catalog we're compiling.
@@ -372,7 +373,7 @@ class Puppet::Parser::Compiler
     end
 
     names = []
-    Puppet::OldType.eachmetaparam do |name|
+    Puppet::Resource::Type.eachmetaparam do |name|
       next if Puppet::Parser::Resource.relationship_parameter?(name)
       names << name
     end
@@ -465,11 +466,13 @@ class Puppet::Parser::Compiler
     end
 
     settings_resource = Puppet::Parser::Resource.new("class", "settings", :scope => @topscope)
-    settings_type.evaluate_code(settings_resource)
+    Puppet::Parser::ResourceTypeHarness.evaluate_code(settings_type, settings_resource)
 
     @catalog.add_resource(settings_resource)
 
-    scope = @topscope.class_scope(settings_type)
+    unless scope = @topscope.class_scope(settings_type)
+      raise "Could not get class scope for Settings type"
+    end
 
     Puppet.settings.each do |name, setting|
       next if name.to_s == "name"

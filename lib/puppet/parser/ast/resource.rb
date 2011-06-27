@@ -1,4 +1,5 @@
 require 'puppet/parser/ast/resource_reference'
+require 'puppet/parser/resource_type_harness'
 
 # Any normal puppet resource declaration.  Can point to a definition or a
 # builtin type.
@@ -54,7 +55,7 @@ class Resource < AST::Branch
           )
 
           if resource.resource_type.is_a? Puppet::Resource::Type
-            resource.resource_type.instantiate_resource(scope, resource)
+            Puppet::Parser::ResourceTypeHarness.instantiate_resource(resource.resource_type, scope, resource)
           end
           scope.compiler.add_resource(scope, resource)
           scope.compiler.evaluate_classes([resource_title],scope,false) if fully_qualified_type == 'class'

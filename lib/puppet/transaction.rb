@@ -340,8 +340,10 @@ class Puppet::Transaction
       resource.warning "Skipping because of failed dependencies"
     elsif resource.virtual?
       resource.debug "Skipping because virtual"
-    elsif resource.appliable_to_device? ^ for_network_device
-      resource.debug "Skipping #{resource.appliable_to_device? ? 'device' : 'host'} resources because running on a #{for_network_device ? 'device' : 'host'}"
+    elsif (for_network_device and ! resource.appliable_to_device?)
+      resource.debug "Skipping host resources because running on a device"
+    elsif (! resource.appliable_to_host?)
+      resource.debug "Skipping device resources because running on a host"
     else
       return false
     end

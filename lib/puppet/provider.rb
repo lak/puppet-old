@@ -202,6 +202,14 @@ class Puppet::Provider
 #        @str
 #    end
 
+  def self.to_s
+    if resource_type
+      "#{resource_type.name.to_s.capitalize}.provider(#{name.to_s})"
+    else
+      "Provider(#{name.to_s})"
+    end
+  end
+
   dochook(:defaults) do
     if @defaults.length > 0
       return "  Default for " + @defaults.collect do |f, v|

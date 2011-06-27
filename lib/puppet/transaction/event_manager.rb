@@ -49,7 +49,7 @@ class Puppet::Transaction::EventManager
       # since eval_generated children can't have direct relationships.
       received = (event.name != :restarted)
       relationship_graph.matching_edges(event, resource).each do |edge|
-        received ||= true unless edge.target.type == :whit
+        received ||= true unless edge.target.type == "whit"
         next unless method = edge.callback
         next unless edge.target.respond_to?(method)
 
@@ -62,12 +62,10 @@ class Puppet::Transaction::EventManager
   end
 
   def queue_events_for_resource(source, target, callback, events)
-    whit = Puppet::Type.type(:whit)
-
     # The message that a resource is refreshing the completed-whit for its own class
     # is extremely counter-intuitive. Basically everything else is easy to understand,
     # if you suppress the whit-lookingness of the whit resources
-    refreshing_c_whit = target.resource_type.name == :whit && target.name =~ /^completed_/
+    refreshing_c_whit = target.resource_type.name == "whit" && target.name =~ /^completed_/
 
     if refreshing_c_whit
       source.debug "The container #{target} will propagate my #{callback} event"
@@ -93,7 +91,7 @@ class Puppet::Transaction::EventManager
     process_noop_events(resource, callback, events) and return false unless events.detect { |e| e.status != "noop" }
     resource.send(callback)
 
-    if not resource.resource_type.name == :whit
+    if not resource.resource_type.name == "whit"
       resource.notice "Triggered '#{callback}' from #{events.length} events"
     end
     return true

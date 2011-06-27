@@ -130,6 +130,11 @@ class Puppet::Transaction::ResourceHarness
     start = Time.now
     status = Puppet::Resource::Status.new(resource)
 
+    if [:whit, :component, :stage].include?(resource.resource_type.name.to_sym)
+      # These are all noops, so don't bother trying to evaluate them.
+      return status
+    end
+
     perform_changes(resource).each do |event|
       status << event
     end

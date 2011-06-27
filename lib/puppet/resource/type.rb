@@ -810,10 +810,12 @@ class Puppet::Resource::Type
   end
 
   def to_s
-    if defined?(@name)
-      "Puppet::Type::#{@name.to_s.capitalize}"
+    n = name || "unnamed_type"
+    case type
+    when :hostclass; "Class[#{n}]"
+    when :node; "Node[#{n}]"
     else
-      super
+      "Puppet::Type::#{n.to_s.capitalize}"
     end
   end
 

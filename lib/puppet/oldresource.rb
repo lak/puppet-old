@@ -161,8 +161,8 @@ class Puppet::OldResource
     end
 
     if provider and ! provider.class.supports_parameter?(klass)
-      missing = klass.required_features.find_all { |f| ! provider.class.feature?(f) }
-      info "Provider %s does not support features %s; not managing attribute %s" % [provider.class.name, missing.join(", "), name]
+      missing = klass.required_features.find_all { |f| ! provider.class.feature?(f) }.join(", ")
+      info "Provider '#{provider.class.name}' does not support features #{missing}; not managing attribute #{name}"
       return nil
     end
 
@@ -729,7 +729,7 @@ class Puppet::OldResource
     @parameters = {}
 
     # Set the title first, so any failures print correctly.
-    if resource.type.to_s.downcase.to_sym == resource_type.name
+    if resource.type.to_s.downcase.to_sym == resource_type.name.to_s.downcase.to_sym
       self.title = resource.title
     else
       # This should only ever happen for components

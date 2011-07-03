@@ -109,6 +109,12 @@ class Type
       "puppet/provider/#{klass.name.to_s}"
     )
 
+    # This can only happen when the type is reloaded in memory and the providers
+    # are still there
+    unless klass.provider_hash.empty?
+      klass.providify
+    end
+
     # We have to load everything so that we can figure out the default type.
     klass.providerloader.loadall
 
@@ -492,16 +498,6 @@ class Type
   # Are we deleting this resource?
   def deleting?
     obj = @parameters[:ensure] and obj.should == :absent
-  end
-
-  # Create a new property if it is valid but doesn't exist
-  # Returns: true if a new parameter was added, false otherwise
-  def add_property_parameter(prop_name)
-    if self.class.validproperty?(prop_name) && !@parameters[prop_name]
-      self.newattr(prop_name)
-      return true
-    end
-    false
   end
 
   #

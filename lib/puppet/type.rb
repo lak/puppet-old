@@ -1638,12 +1638,6 @@ class Type
 
   # all of the variables that must be initialized for each subclass
   def self.initvars
-    # all of the instances of this class
-    @objects = Hash.new
-    @aliases = Hash.new
-
-    @defaults = {}
-
     @parameters ||= []
 
     @validproperties = {}

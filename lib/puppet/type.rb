@@ -1645,17 +1645,7 @@ class Type
     @parameters = []
     @paramhash = {}
 
-    @paramdoc = Hash.new { |hash,key|
-      key = key.intern if key.is_a?(String)
-      if hash.include?(key)
-        hash[key]
-      else
-        "Param Documentation for #{key} not found"
-      end
-    }
-
     @doc ||= ""
-
   end
 
   def self.to_s

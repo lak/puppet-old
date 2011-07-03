@@ -146,52 +146,6 @@ class TestTypeAttributes < Test::Unit::TestCase
     end
   end
 
-  def test_alias_parameter
-    type = mktype
-    type.newparam(:name) {}
-    type.newparam(:one) {}
-    type.newproperty(:two) {}
-
-    aliases = {
-      :three => :one,
-      :four => :two
-    }
-    aliases.each do |new, old|
-      assert_nothing_raised("Could not create alias parameter #{new}") do
-        type.set_attr_alias new => old
-      end
-    end
-
-    aliases.each do |new, old|
-      assert_equal(old, type.attr_alias(new), "did not return alias info for #{new}")
-    end
-
-    assert_nil(type.attr_alias(:name), "got invalid alias info for name")
-
-    inst = type.new(:name => "my name")
-    assert(inst, "could not create instance")
-
-    aliases.each do |new, old|
-      val = "value #{new}"
-      assert_nothing_raised do
-        inst[new] = val
-      end
-
-      case old
-      when :one # param
-
-              assert_equal(
-        val, inst[new],
-        
-          "Incorrect alias value for #{new} in []")
-      else
-        assert_equal(val, inst.should(new), "Incorrect alias value for #{new} in should")
-      end
-      assert_equal(val, inst.value(new), "Incorrect alias value for #{new}")
-      assert_equal(val, inst.value(old), "Incorrect orig value for #{old}")
-    end
-  end
-
   # Make sure newattr handles required features correctly.
   def test_newattr_and_required_features
     # Make a type with some features

@@ -73,7 +73,7 @@ describe Puppet::Type.type(:mount)::Ensure do
   end
 
   def mount_stub(params)
-    Puppet::Type.type(:mount).validproperties.each do |prop|
+    Puppet::Type.type(:mount).property_names.each do |prop|
       unless params[prop]
         params[prop] = :absent
         @mount[prop] = :absent

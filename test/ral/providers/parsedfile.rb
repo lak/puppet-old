@@ -500,7 +500,7 @@ class TestParsedFile < Test::Unit::TestCase
     assert_nothing_raised { notdisk.provider.create }
 
     # Now make sure all of the data is copied over correctly.
-    notdisk.class.validproperties.each do |property|
+    notdisk.class.property_names.each do |property|
       assert_equal(notdisk.should(property), notdisk.provider.property_hash[property],
         "#{property} was not copied over during creation")
     end

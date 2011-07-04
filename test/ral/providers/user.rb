@@ -91,7 +91,7 @@ class TestUserProvider < Test::Unit::TestCase
 
 
   def eachproperty
-    Puppet::Type.type(:user).validproperties.each do |property|
+    Puppet::Type.type(:user).property_names.each do |property|
       yield property
     end
   end
@@ -175,7 +175,7 @@ class TestUserProvider < Test::Unit::TestCase
     }
     assert(user, "Could not create user provider")
 
-    Puppet::Type.type(:user).validproperties.each do |property|
+    Puppet::Type.type(:user).property_names.each do |property|
       next if property == :ensure
       # This is mostly in place for the 'password' stuff.
       next unless user.class.supports_parameter?(property) and Puppet.features.root?
@@ -482,7 +482,7 @@ class TestUserProvider < Test::Unit::TestCase
       assert_equal("Puppet's Testing User pptest", user.comment,
         "Comment was not set")
 
-      tests = Puppet::Type.type(:user).validproperties
+      tests = Puppet::Type.type(:user).property_names
 
       just = nil
       tests.each { |test|

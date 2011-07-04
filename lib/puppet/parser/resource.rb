@@ -272,9 +272,9 @@ class Puppet::Parser::Resource < Puppet::Resource
   def add_metaparams
     compat_mode = metaparam_compatibility_mode?
 
-    Puppet::Type.eachmetaparam do |name|
-      next unless self.class.relationship_parameter?(name)
-      add_backward_compatible_relationship_param(name) if compat_mode
+    Puppet::Type.metaparameters.each do |param|
+      next unless self.class.relationship_parameter?(param.name)
+      add_backward_compatible_relationship_param(param.name) if compat_mode
     end
   end
 

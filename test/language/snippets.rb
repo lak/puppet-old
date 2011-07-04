@@ -99,7 +99,7 @@ class TestSnippets < Test::Unit::TestCase
   end
 
   def properties(type)
-    properties = type.validproperties
+    properties = type.property_names
   end
 
   def metaparams(type)

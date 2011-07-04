@@ -85,7 +85,7 @@ module PuppetTest
 
     # Set up methods to fake things
     def self.apimethods(*ary)
-      @resource_type.validproperties.each do |property|
+      @resource_type.property_names.each do |property|
         ary << property unless ary.include? property
       end
       attr_accessor(*ary)
@@ -124,7 +124,7 @@ module PuppetTest
     end
 
     def properties
-      self.class.resource_type.validproperties.inject({}) do |props, name|
+      self.class.resource_type.property_names.inject({}) do |props, name|
         props[name] = self.send(name) || :absent
         props
       end

@@ -26,7 +26,7 @@ class TestType < Test::Unit::TestCase
       )
 
       # Skip types with no parameters or valid properties
-      #unless ! type.parameters.empty? or ! type.validproperties.empty?
+      #unless ! type.parameters.empty? or ! type.property_names.empty?
       #    next
       #end
 
@@ -42,7 +42,7 @@ class TestType < Test::Unit::TestCase
 
               assert_not_nil(
                 
-          type.validproperties,
+          type.property_names,
         
           "Valid properties for #{name} are nil"
         )

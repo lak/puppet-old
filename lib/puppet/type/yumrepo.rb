@@ -82,7 +82,7 @@ module Puppet
 
     def self.instances
       l = []
-      check = validproperties
+      check = property_names
       clear
       inifile.each_section do |s|
         next if s.name == "main"

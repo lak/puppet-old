@@ -128,7 +128,7 @@ class Puppet::Parameter
   end
 
   def self.metaparameter?
-    Puppet::Type.metaparam?(name)
+    Puppet::Type.metaparameter?(name)
   end
 
   def self.parameter?
@@ -206,9 +206,9 @@ class Puppet::Parameter
     send_log(resource[:loglevel], msg)
   end
 
-  # Is this parameter a metaparam?
-  def metaparam?
-    self.class.metaparam
+  # Is this parameter a metaparameter?
+  def metaparameter?
+    self.class.metaparameter?
   end
 
   # each parameter class must define the name method, and parameter

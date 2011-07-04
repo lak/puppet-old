@@ -34,17 +34,6 @@ class TestTypeProviders < Test::Unit::TestCase
     assert_equal(greater, @type.defaultprovider)
   end
 
-  # Make sure the provider is always the first parameter created.
-  def test_provider_sorting
-    should = [:name, :ensure]
-    assert_equal(should, @type.allattrs.reject { |p| ! should.include?(p) }, "Got wrong order of parameters")
-
-    @type.provide(:yay) { }
-    should = [:name, :provider, :ensure]
-    assert_equal(should, @type.allattrs.reject { |p| ! should.include?(p) },
-      "Providify did not reorder parameters")
-  end
-
   # Make sure that provider instances can be passed in directly.
   def test_name_or_provider
     provider = @type.provide(:testing) do

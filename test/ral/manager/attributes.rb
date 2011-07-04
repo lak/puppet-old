@@ -206,18 +206,18 @@ class TestTypeAttributes < Test::Unit::TestCase
     resource = file.new(:path => tempfile)
     inst = klass.new(:resource => resource)
 
-    {:property => [:owner, :group], :parameter => [:ignore, :recurse], :metaparam => [:require, :subscribe]}.each do |attrtype, attrs|
-      assert_nothing_raised("Could not set check to a single #{attrtype} value") do
+    {:property => [:owner, :group], :parameter => [:ignore, :recurse], :metaparam => [:require, :subscribe]}.each do |parameter_type, attrs|
+      assert_nothing_raised("Could not set check to a single #{parameter_type} value") do
         inst.value = attrs[0]
       end
 
-      if attrtype == :property
+      if parameter_type == :property
         assert(resource.property(attrs[0]), "Check did not create property instance during single check")
       end
-      assert_nothing_raised("Could not set check to multiple #{attrtype} values") do
+      assert_nothing_raised("Could not set check to multiple #{parameter_type} values") do
         inst.value = attrs
       end
-      if attrtype == :property
+      if parameter_type == :property
         assert(resource.property(attrs[1]), "Check did not create property instance during multiple check")
       end
     end

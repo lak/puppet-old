@@ -28,7 +28,7 @@ class UserAddProviderTest < PuppetTest::TestCase
     @user = @type.new(@vals)
 
     @vals.each do |name, val|
-      next unless @user.class.validproperty?(name)
+      next unless @user.class.valid_parameter?(name)
     end
     @user
   end
@@ -47,7 +47,7 @@ class UserAddProviderTest < PuppetTest::TestCase
     user = setup_user
 
     @vals.each do |name, val|
-      next unless user.class.validproperty?(name)
+      next unless user.class.valid_parameter?(name)
     end
 
     user.expects(:allowdupe?).returns(false)

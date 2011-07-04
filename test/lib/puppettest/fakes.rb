@@ -13,14 +13,6 @@ module PuppetTest
       @realresource.key_attributes
     end
 
-    def self.validproperties
-      Puppet::Type.type(@name).validproperties
-    end
-
-    def self.validproperty?(name)
-      Puppet::Type.type(@name).validproperty?(name)
-    end
-
     def self.to_s
       "Fake#{@name.to_s.capitalize}"
     end

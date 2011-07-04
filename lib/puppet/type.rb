@@ -198,28 +198,6 @@ class Type
         0
       end
     }
-#    # It seems like there should be a simpler way to sort this list,
-#    # but I don't know what it is.  We need [namevars, :provider, :ensure, everything_else].
-#    if klass.isnamevar? or klass.name == :name
-#      # Namevars should always come absolute-first
-#      @parameters.unshift klass
-#    elsif klass.name == :provider
-#      # 'provider' should be the first non-namevar parameter
-#      if first_nonnamevar_index = @parameters.find_index { |p| ! p.isnamevar? }
-#        @parameters.insert(first_nonnamevar_index, klass)
-#      else
-#        @parameters << klass
-#      end
-#    elsif klass.name == :ensure
-#      # 'ensure' should be the first property
-#      if first_prop_index = @parameters.find_index { |p| p.property? }
-#        @parameters.insert(first_prop_index, klass)
-#      else
-#        @parameters << klass
-#      end
-#    else
-#      @parameters << klass
-#    end
     @parameters_by_name ||= {}
     @parameters_by_name[klass.name] = klass
   end

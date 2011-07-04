@@ -278,11 +278,6 @@ class Type
     parameters.find_all { |p| p.property? }
   end
 
-  # Find the class associated with any given attribute.
-  def self.parameter(name)
-    parameter(name)
-  end
-
   # What type of parameter are we dealing with? Cache the results, because
   # this method gets called so many times.
   def self.attrtype(attr)

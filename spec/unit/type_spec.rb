@@ -20,17 +20,17 @@ describe Puppet::Type do
 
   it "should be able to retrieve a property by name" do
     resource = Puppet::Type.type(:mount).new(:name => "foo", :fstype => "bar", :pass => 1, :ensure => :present)
-    resource.property(:fstype).must be_instance_of(Puppet::Type.type(:mount).attrclass(:fstype))
+    resource.property(:fstype).must be_instance_of(Puppet::Type.type(:mount).parameter(:fstype))
   end
 
   it "should be able to retrieve a parameter by name" do
     resource = Puppet::Type.type(:mount).new(:name => "foo", :fstype => "bar", :pass => 1, :ensure => :present)
-    resource.parameter(:name).must be_instance_of(Puppet::Type.type(:mount).attrclass(:name))
+    resource.parameter(:name).must be_instance_of(Puppet::Type.type(:mount).parameter(:name))
   end
 
   it "should be able to retrieve a property by name using the :parameter method" do
     resource = Puppet::Type.type(:mount).new(:name => "foo", :fstype => "bar", :pass => 1, :ensure => :present)
-    resource.parameter(:fstype).must be_instance_of(Puppet::Type.type(:mount).attrclass(:fstype))
+    resource.parameter(:fstype).must be_instance_of(Puppet::Type.type(:mount).parameter(:fstype))
   end
 
   it "should be able to retrieve all set properties" do

@@ -62,11 +62,11 @@ describe user do
 
   properties.each do |property|
     it "should have a #{property} property" do
-      user.attrclass(property).ancestors.should be_include(Puppet::Property)
+      user.parameter(property).ancestors.should be_include(Puppet::Property)
     end
 
     it "should have documentation for its #{property} property" do
-      user.attrclass(property).doc.should be_instance_of(String)
+      user.parameter(property).doc.should be_instance_of(String)
     end
   end
 
@@ -74,16 +74,16 @@ describe user do
 
   list_properties.each do |property|
     it "should have a list '#{property}'" do
-      user.attrclass(property).ancestors.should be_include(Puppet::Property::List)
+      user.parameter(property).ancestors.should be_include(Puppet::Property::List)
     end
   end
 
   it "should have an ordered list 'profiles'" do
-    user.attrclass(:profiles).ancestors.should be_include(Puppet::Property::OrderedList)
+    user.parameter(:profiles).ancestors.should be_include(Puppet::Property::OrderedList)
   end
 
   it "should have key values 'keys'" do
-    user.attrclass(:keys).ancestors.should be_include(Puppet::Property::KeyValue)
+    user.parameter(:keys).ancestors.should be_include(Puppet::Property::KeyValue)
   end
 
   describe "when retrieving all current values" do
@@ -115,7 +115,7 @@ describe user do
 
   describe "when managing the ensure property" do
     before do
-      @ensure = user.attrclass(:ensure).new(:resource => @resource)
+      @ensure = user.parameter(:ensure).new(:resource => @resource)
     end
 
     it "should support a :present value" do
@@ -153,19 +153,19 @@ describe user do
 
   describe "when managing the uid property" do
     it "should convert number-looking strings into actual numbers" do
-      uid = user.attrclass(:uid).new(:resource => @resource)
+      uid = user.parameter(:uid).new(:resource => @resource)
       uid.should = "50"
       uid.should.must == 50
     end
 
     it "should support UIDs as numbers" do
-      uid = user.attrclass(:uid).new(:resource => @resource)
+      uid = user.parameter(:uid).new(:resource => @resource)
       uid.should = 50
       uid.should.must == 50
     end
 
     it "should :absent as a value" do
-      uid = user.attrclass(:uid).new(:resource => @resource)
+      uid = user.parameter(:uid).new(:resource => @resource)
       uid.should = :absent
       uid.should.must == :absent
     end
@@ -173,36 +173,36 @@ describe user do
 
   describe "when managing the gid" do
     it "should :absent as a value" do
-      gid = user.attrclass(:gid).new(:resource => @resource)
+      gid = user.parameter(:gid).new(:resource => @resource)
       gid.should = :absent
       gid.should.must == :absent
     end
 
     it "should convert number-looking strings into actual numbers" do
-      gid = user.attrclass(:gid).new(:resource => @resource)
+      gid = user.parameter(:gid).new(:resource => @resource)
       gid.should = "50"
       gid.should.must == 50
     end
 
     it "should support GIDs specified as integers" do
-      gid = user.attrclass(:gid).new(:resource => @resource)
+      gid = user.parameter(:gid).new(:resource => @resource)
       gid.should = 50
       gid.should.must == 50
     end
 
     it "should support groups specified by name" do
-      gid = user.attrclass(:gid).new(:resource => @resource)
+      gid = user.parameter(:gid).new(:resource => @resource)
       gid.should = "foo"
       gid.should.must == "foo"
     end
 
     describe "when testing whether in sync" do
       before do
-        @gid = user.attrclass(:gid).new(:resource => @resource, :should => %w{foo bar})
+        @gid = user.parameter(:gid).new(:resource => @resource, :should => %w{foo bar})
       end
 
       it "should return true if no 'should' values are set" do
-        @gid = user.attrclass(:gid).new(:resource => @resource)
+        @gid = user.parameter(:gid).new(:resource => @resource)
 
         @gid.must be_safe_insync(500)
       end
@@ -224,7 +224,7 @@ describe user do
 
     describe "when syncing" do
       before do
-        @gid = user.attrclass(:gid).new(:resource => @resource, :should => %w{foo bar})
+        @gid = user.parameter(:gid).new(:resource => @resource, :should => %w{foo bar})
       end
 
       it "should use the first found, specified group as the desired value and send it to the provider" do
@@ -240,7 +240,7 @@ describe user do
 
   describe "when managing expiry" do
     before do
-      @expiry = user.attrclass(:expiry).new(:resource => @resource)
+      @expiry = user.parameter(:expiry).new(:resource => @resource)
     end
 
     it "should fail if given an invalid date" do
@@ -250,7 +250,7 @@ describe user do
 
   describe "when managing minimum password age" do
     before do
-      @age = user.attrclass(:password_min_age).new(:resource => @resource)
+      @age = user.parameter(:password_min_age).new(:resource => @resource)
     end
 
     it "should accept a negative minimum age" do
@@ -264,7 +264,7 @@ describe user do
 
   describe "when managing maximum password age" do
     before do
-      @age = user.attrclass(:password_max_age).new(:resource => @resource)
+      @age = user.parameter(:password_max_age).new(:resource => @resource)
     end
 
     it "should accept a negative maximum age" do
@@ -278,7 +278,7 @@ describe user do
 
   describe "when managing passwords" do
     before do
-      @password = user.attrclass(:password).new(:resource => @resource, :should => "mypass")
+      @password = user.parameter(:password).new(:resource => @resource, :should => "mypass")
     end
 
     it "should not include the password in the change log when adding the password" do
@@ -305,7 +305,7 @@ describe user do
     end
 
     it "should support a :role value for ensure" do
-      @ensure = user.attrclass(:ensure).new(:resource => @resource)
+      @ensure = user.parameter(:ensure).new(:resource => @resource)
       lambda { @ensure.should = :role }.should_not raise_error
     end
   end

@@ -1,8 +1,8 @@
 #!/usr/bin/env rspec
 require 'spec_helper'
 
-source = Puppet::Type.type(:file).attrclass(:source)
-describe Puppet::Type.type(:file).attrclass(:source) do
+source = Puppet::Type.type(:file).parameter(:source)
+describe Puppet::Type.type(:file).parameter(:source) do
   before do
     # Wow that's a messy interface to the resource.
     @resource = stub 'resource', :[]= => nil, :property => nil, :catalog => stub("catalog", :dependent_data_expired? => false), :line => 0, :file => ''

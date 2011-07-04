@@ -204,7 +204,7 @@ class TestType < Test::Unit::TestCase
     end
 
     # Now create an instance
-    obj = type.create(:name => :myobj)
+    obj = type.new(:name => :myobj)
 
     inst = property.new(:resource => obj)
 
@@ -241,7 +241,7 @@ class TestType < Test::Unit::TestCase
     path = tempfile
     assert_nothing_raised do
 
-            file = fileclass.create(
+            file = fileclass.new(
                 
         :title => "Myfile",
         
@@ -257,7 +257,7 @@ class TestType < Test::Unit::TestCase
     # Now make sure we can specify both and still get the right answers
     assert_nothing_raised do
 
-            file = fileclass.create(
+            file = fileclass.new(
                 
         :title => "Myfile",
         

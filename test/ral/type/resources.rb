@@ -22,7 +22,7 @@ class TestResources < Test::Unit::TestCase
   def mk_purger(managed = false)
     @purgenum ||= 0
     @purgenum += 1
-    obj = @purgetype.create :name => "purger#{@purgenum}"
+    obj = @purgetype.new :name => "purger#{@purgenum}"
     $purgemembers[obj[:name]] = obj
     obj[:fake] = "testing" if managed
     obj
@@ -79,8 +79,8 @@ class TestResources < Test::Unit::TestCase
     # Now make sure root fails the test
     @user = Puppet::Type.type(:user)
     assert_nothing_raised {
-      assert(! res.check(@user.create(:name => "root")), "root passed check")
-      assert(! res.check(@user.create(:name => "nobody")), "nobody passed check")
+      assert(! res.check(@user.new(:name => "root")), "root passed check")
+      assert(! res.check(@user.new(:name => "nobody")), "nobody passed check")
     }
 
     # Now find a user between 0 and the limit
@@ -98,10 +98,10 @@ class TestResources < Test::Unit::TestCase
       end
     }
 
-    assert(! res.check(@user.create(:name => low)), "low user #{low} passed check") if low
+    assert(! res.check(@user.new(:name => low)), "low user #{low} passed check") if low
     if high
       res[:unless_system_user] = 50
-      assert(res.check(@user.create(:name => high)), "high user #{high} failed check")
+      assert(res.check(@user.new(:name => high)), "high user #{high} failed check")
     end
   end
 end

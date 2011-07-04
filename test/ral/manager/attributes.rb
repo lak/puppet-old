@@ -113,7 +113,11 @@ class TestTypeAttributes < Test::Unit::TestCase
       :meta => :newmetaparam, :param => :newparam, :prop => :newproperty
     }.each do |name, method|
       assert_nothing_raised("Could not make #{name} of type #{method}") do
-        type.send(method, name) {}
+        if method == :newmetaparam
+          Puppet::Type.send(method, name) {}
+        else
+          type.send(method, name) {}
+        end
       end
     end
 
@@ -170,6 +174,7 @@ class TestTypeAttributes < Test::Unit::TestCase
     [nope, maybe, yep].each_with_index do |prov, i|
       resource = type.new(:provider => prov.name, :name => "test#{i}", :none => "a", :one => "b", :two => "c")
 
+
       case prov.name
       when :nope
         yes = [:none]
@@ -181,9 +186,9 @@ class TestTypeAttributes < Test::Unit::TestCase
         yes = [:none, :one, :two]
         no = []
       end
-      yes.each { |a| assert(resource.should(a), "Did not get value for #{a} in #{prov.name}") }
+      yes.each { |a| assert(resource[a], "Did not get value for '#{a}' in '#{prov.name}'") }
       no.each do |a|
-        assert_nil(resource.should(a), "Got value for unsupported %s in %s" % [a, prov.name])
+        assert_nil(resource[a], "Got value for unsupported %s in %s" % [a, prov.name])
         if Puppet::Util::Log.sendlevel?(:info)
           assert(@logs.find { |l| l.message =~ /not managing attribute #{a}/ and l.level == :info }, "No warning about failed %s" % a)
         end
@@ -222,33 +227,4 @@ class TestTypeAttributes < Test::Unit::TestCase
       inst.value = :nosuchattr
     end
   end
-
-  def test_check_ignores_unsupported_params
-    type = Puppet::Type.newtype(:unsupported) do
-      feature :nosuchfeat, "testing"
-      newparam(:name) {}
-      newproperty(:yep) {}
-      newproperty(:nope,  :required_features => :nosuchfeat) {}
-    end
-    $yep = :absent
-    type.provide(:only) do
-      def self.supports_parameter?(param)
-        param.name != :nope
-      end
-
-      def yep
-        $yep
-      end
-      def yep=(v)
-        $yep = v
-      end
-    end
-    cleanup { Puppet::Type.rmtype(:unsupported) }
-
-    obj = type.new(:name => "test", :check => :yep)
-    obj.stubs(:newattr).returns(stub_everything("newattr"))
-    obj.expects(:newattr).with(:nope).never
-    obj[:check] = :all
-  end
 end
-

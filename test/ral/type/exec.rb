@@ -302,6 +302,7 @@ class TestExec < Test::Unit::TestCase
 
     assert_events([:executed_command], comp)
     assert_events([:executed_command], comp)
+    assert_events([:executed_command], comp)
     system("touch #{afile}")
     assert_events([], comp)
     assert_events([], comp)

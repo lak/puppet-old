@@ -176,7 +176,7 @@ class TestFileTarget < Test::Unit::TestCase
     source = tempfile
     dest = tempfile
 
-    obj = @file.create(:path => source, :target => dest)
+    obj = @file.new(:path => source, :target => dest)
 
     prop = obj.send(:property, :target)
     prop.send(:instance_variable_set, "@should", [:nochange])

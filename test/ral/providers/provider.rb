@@ -226,8 +226,8 @@ class TestProvider < Test::Unit::TestCase
 
   def test_mk_resource_methods
     prov = newprovider
-    resourcetype = Struct.new(:validproperties, :parameters)
-    m = resourcetype.new([:prop1, :prop2], [:param1, :param2])
+    resourcetype = Struct.new(:parameter_names)
+    m = resourcetype.new([:prop1, :prop2, :param1, :param2])
     prov.resource_type = m
 
     assert_nothing_raised("could not call mk_resource_methods") do

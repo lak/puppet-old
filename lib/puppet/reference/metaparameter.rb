@@ -22,14 +22,10 @@ in your manifest, including defined components.
 }
   begin
     params = []
-    Puppet::Type.eachmetaparam { |param|
-      params << param
-    }
-
-    params.sort { |a,b|
-      a.to_s <=> b.to_s
+    Puppet::Type.metaparameters.sort { |a,b|
+      a.name.to_s <=> b.name.to_s
     }.each { |param|
-      str += paramwrap(param.to_s, scrub(Puppet::Type.metaparamdoc(param)), :level => 3)
+      str += paramwrap(param.to_s, scrub(param.doc), :level => 3)
     }
   rescue => detail
     puts detail.backtrace

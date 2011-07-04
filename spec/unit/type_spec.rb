@@ -269,6 +269,13 @@ describe Puppet::Type do
     it "should not consider :name to be a valid metaparameter" do
       Puppet::Type.should_not be_metaparameter(:name)
     end
+
+    it "should be able to return all known properties" do
+      foo = @type.newproperty(:foo)
+      bar = @type.newproperty(:bar)
+
+      @type.properties.should == [foo, bar]
+    end
   end
 
   describe "when creating an event" do

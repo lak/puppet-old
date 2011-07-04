@@ -1,7 +1,7 @@
 #!/usr/bin/env rspec
 require 'spec_helper'
 
-checksum = Puppet::Type.type(:file).attrclass(:checksum)
+checksum = Puppet::Type.type(:file).parameter(:checksum)
 describe checksum do
   before do
     @resource = Puppet::Type.type(:file).new :path => "/foo/bar"

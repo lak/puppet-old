@@ -279,7 +279,7 @@ class Type
   end
 
   # Find the class associated with any given attribute.
-  def self.attrclass(name)
+  def self.parameter(name)
     parameter(name)
   end
 

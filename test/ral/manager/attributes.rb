@@ -91,7 +91,7 @@ class TestTypeAttributes < Test::Unit::TestCase
     name = "name#{@num}"
     inst = type.new(:name => name)
     [:meta, :param, :prop].each do |name|
-      klass = type.attrclass(name)
+      klass = type.parameter(name)
       assert(klass, "did not get class for #{name}")
       obj = yield inst, klass
       assert_instance_of(klass, obj, "did not get object back")
@@ -201,7 +201,7 @@ class TestTypeAttributes < Test::Unit::TestCase
   # Make sure the 'check' metaparam just ignores non-properties, rather than failing.
   def test_check_allows_parameters
     file = Puppet::Type.type(:file)
-    klass = file.attrclass(:check)
+    klass = file.parameter(:check)
 
     resource = file.new(:path => tempfile)
     inst = klass.new(:resource => resource)

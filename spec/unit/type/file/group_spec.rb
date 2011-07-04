@@ -1,7 +1,7 @@
 #!/usr/bin/env rspec
 require 'spec_helper'
 
-property = Puppet::Type.type(:file).attrclass(:group)
+property = Puppet::Type.type(:file).parameter(:group)
 
 describe property do
   before do

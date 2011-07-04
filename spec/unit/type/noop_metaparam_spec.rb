@@ -3,7 +3,7 @@ require 'spec_helper'
 
 require 'puppet/type'
 
-describe Puppet::Type.type(:file).attrclass(:noop) do
+describe Puppet::Type.type(:file).parameter(:noop) do
   before do
     Puppet.settings.stubs(:use)
     @file = Puppet::Type.newfile :path => "/what/ever"

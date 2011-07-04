@@ -104,8 +104,8 @@ class TestSnippets < Test::Unit::TestCase
 
   def metaparams(type)
     mparams = []
-    Puppet::Type.eachmetaparam { |param|
-      mparams.push param
+    Puppet::Type.metaparameters.each { |param|
+      mparams.push param.name
     }
 
     mparams

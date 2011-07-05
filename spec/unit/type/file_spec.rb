@@ -1022,27 +1022,23 @@ describe Puppet::Type.type(:file) do
       end
 
       it "should configure each file to be removed" do
-        local = stub 'local'
-        local.stubs(:[]).with(:source).returns nil # Thus, a local file
-        local.stubs(:[]).with(:path).returns "foo"
+        local = Puppet::Type.type(:file).new(:path => File.join(@file[:path], "local"))
         @file.expects(:recurse_local).returns("local" => local)
-        local.expects(:[]=).with(:ensure, :absent)
-
         @file.recurse
+        local[:ensure].should == :absent
       end
 
       it "should not remove files that exist in the remote repository" do
         @file["source"] = "/my/file"
         @file.expects(:recurse_local).returns({})
 
-        remote = stub 'remote'
-        remote.stubs(:[]).with(:source).returns "/whatever" # Thus, a remote file
-        remote.stubs(:[]).with(:path).returns "foo"
+        remote = Puppet::Type.type(:file).new(:path => File.join(@file[:path], "remote"))
+        remote[:source] = "puppet:///foo"
 
         @file.expects(:recurse_remote).with { |hash| hash["remote"] = remote }
-        remote.expects(:[]=).with(:ensure, :absent).never
-
         @file.recurse
+
+        remote[:ensure].should_not == :absent
       end
     end
 

@@ -96,12 +96,14 @@ class Puppet::Transaction
 
     Puppet.info "Applying configuration version '#{catalog.version}'" if catalog.version
 
-    relationship_graph.traverse do |resource|
-      if resource.is_a?(Puppet::Type::Component)
-        Puppet.warning "Somehow left a component in the relationship graph"
-      else
-        seconds = thinmark { eval_resource(resource) }
-        resource.info "Evaluated in %0.2f seconds" % seconds if Puppet[:evaltrace] and @catalog.host_config?
+    begin
+      relationship_graph.traverse do |resource|
+        if resource.resource_type.name == :component
+          Puppet.warning "Somehow left a component in the relationship graph"
+        else
+          seconds = thinmark { eval_resource(resource) }
+          resource.info "Evaluated in %0.2f seconds" % seconds if Puppet[:evaltrace] and @catalog.host_config?
+        end
       end
     end
 

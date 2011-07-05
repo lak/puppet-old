@@ -1,3 +1,5 @@
+class Puppet::Resource; end
+
 class Puppet::Resource::TypeCollection
   attr_reader :environment
   attr_accessor :parse_failed

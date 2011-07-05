@@ -1,4 +1,3 @@
-require 'puppet'
 require 'sync'
 require 'getoptlong'
 require 'puppet/external/event-loop'

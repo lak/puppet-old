@@ -141,7 +141,7 @@ class Puppet::Property < Puppet::Parameter
   def initialize(hash = {})
     super
 
-    if ! self.metaparameter? and klass = Puppet::Type.metaparameter(self.class.name)
+    if ! self.metaparameter? and klass = Puppet::OldType.metaparameter(self.class.name)
       setup_shadow(klass)
     end
   end

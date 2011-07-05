@@ -138,6 +138,8 @@ module Puppet::Util::ClassGen
 
   # Handle the setting and/or removing of the associated constant.
   def handleclassconst(klass, name, options)
+    return unless self.is_a?(Class)
+
     const = genconst_string(name, options)
 
     if is_constant_defined?(const)

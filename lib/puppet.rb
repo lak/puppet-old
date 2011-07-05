@@ -149,8 +149,9 @@ module Puppet
 end
 
 require 'puppet/type'
-require 'puppet/parser'
+require 'puppet/node/environment'
 require 'puppet/resource'
+require 'puppet/parser'
 require 'puppet/network'
 require 'puppet/ssl'
 require 'puppet/module'

@@ -128,7 +128,7 @@ class Puppet::Parameter
   end
 
   def self.metaparameter?
-    Puppet::Type.metaparameter?(name)
+    Puppet::OldType.metaparameter?(name)
   end
 
   def self.parameter?

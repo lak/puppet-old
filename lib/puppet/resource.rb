@@ -140,7 +140,7 @@ class Puppet::Resource
 
   # Is this a builtin resource type?
   def builtin_type?
-    resource_type.is_a?(Class)
+    resource_type.is_a?(Puppet::OldType)
   end
 
   # Iterate over each param/value pair, as required for Enumerable.
@@ -284,7 +284,7 @@ class Puppet::Resource
     if typeklass = Puppet::Type.type(self.type)
       return typeklass.new(self)
     else
-      return Puppet::Type::Component.new(self)
+      return Puppet::Type.type(:component).new(self)
     end
   end
 

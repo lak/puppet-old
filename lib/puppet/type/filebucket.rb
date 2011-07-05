@@ -65,8 +65,6 @@ module Puppet
       @bucket
     end
 
-    private
-
     def mkbucket
       # Default is a local filebucket, if no server is given.
       # If the default path has been removed, too, then

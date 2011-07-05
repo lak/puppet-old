@@ -372,7 +372,7 @@ class Puppet::Parser::Compiler
     end
 
     names = []
-    Puppet::Type.metaparameters.each do |param|
+    Puppet::OldType.metaparameters.each do |param|
       next if Puppet::Parser::Resource.relationship_parameter?(param.name)
       names << param.name
     end

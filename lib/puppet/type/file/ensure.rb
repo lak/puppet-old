@@ -138,6 +138,7 @@ module Puppet
     end
 
     def retrieve
+      puts resource.to_s
       if stat = @resource.stat
         return stat.ftype.intern
       else

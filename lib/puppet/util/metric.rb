@@ -1,6 +1,3 @@
-# included so we can test object types
-require 'puppet'
-
 # A class for handling metrics.  This is currently ridiculously hackish.
 class Puppet::Util::Metric
 

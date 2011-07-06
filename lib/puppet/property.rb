@@ -66,13 +66,6 @@ class Puppet::Property < Puppet::Parameter
     value
   end
 
-  # Call the provider method.
-  def call_provider(value)
-      provider.send(self.class.name.to_s + "=", value)
-  rescue NoMethodError
-      self.fail "The #{provider.class.name} provider can not handle attribute #{self.class.name}"
-  end
-
   # Call the dynamically-created method associated with our value, if
   # there is one.
   def call_valuemethod(name, value)
@@ -238,13 +231,6 @@ class Puppet::Property < Puppet::Parameter
     end
   end
 
-  # By default, call the method associated with the property name on our
-  # provider.  In other words, if the property name is 'gid', we'll call
-  # 'provider.gid' to retrieve the current value.
-  def retrieve
-    provider.send(self.class.name)
-  end
-
   # Set our value, using the provider, an associated block, or both.
   def set(value)
     # Set a name for looking up associated options like the event.
@@ -303,11 +289,6 @@ class Puppet::Property < Puppet::Parameter
 
   def should_to_s(newvalue)
     [newvalue].flatten.join(" ")
-  end
-
-  def sync
-    devfail "Got a nil value for should" unless should
-    set(should)
   end
 
   # Verify that the passed value is valid.

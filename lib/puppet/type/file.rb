@@ -626,11 +626,10 @@ Puppet::Type.newtype(:file) do
     expire
   end
 
-  def retrieve
+  def pre_retrieve
     if source = parameter(:source)
       source.copy_source_values
     end
-    super
   end
 
   # Set the checksum, from another property.  There are multiple

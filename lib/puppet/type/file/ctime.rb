@@ -10,6 +10,10 @@ module Puppet
       current_value
     end
 
+    def sync(value)
+      set(value)
+    end
+
     validate do
       fail "ctime is read-only"
     end

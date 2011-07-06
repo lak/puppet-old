@@ -686,63 +686,6 @@ class Type
     insync
   end
 
-  # retrieve the current value of all contained properties
-  def retrieve
-    fail "Provider #{provider.class.name} is not functional on this host" if self.provider.is_a?(Puppet::Provider) and ! provider.class.suitable?
-
-    result = Puppet::Resource.new(type, title)
-
-    # Provide the name, so we know we'll always refer to a real thing
-    result[:name] = self[:name] unless self[:name] == title
-
-    if ensure_prop = property(:ensure) or (self.class.validattr?(:ensure) and ensure_prop = newattr(:ensure))
-      result[:ensure] = ensure_state = ensure_prop.retrieve
-    else
-      ensure_state = nil
-    end
-
-    properties.each do |property|
-      next if property.name == :ensure
-      if ensure_state == :absent
-        result[property] = :absent
-      else
-        result[property] = property.retrieve
-      end
-    end
-
-    result
-  end
-
-  def retrieve_resource
-    resource = retrieve
-    resource = Resource.new(type, title, :parameters => resource) if resource.is_a? Hash
-    resource
-  end
-
-  # Get a hash of the current properties.  Returns a hash with
-  # the actual property instance as the key and the current value
-  # as the, um, value.
-  def currentpropvalues
-    # It's important to use the 'properties' method here, as it follows the order
-    # in which they're defined in the class.  It also guarantees that 'ensure'
-    # is the first property, which is important for skipping 'retrieve' on
-    # all the properties if the resource is absent.
-    ensure_state = false
-    return properties.inject({}) do | prophash, property|
-      if property.name == :ensure
-        ensure_state = property.retrieve
-        prophash[property] = ensure_state
-      else
-        if ensure_state == :absent
-          prophash[property] = :absent
-        else
-          prophash[property] = property.retrieve
-        end
-      end
-      prophash
-    end
-  end
-
   # Are we running in noop mode?
   def noop?
     # If we're not a host_config, we're almost certainly part of

@@ -83,5 +83,9 @@ module Puppet
       end
     end
   end
+
+    def sync(value)
+      set(value)
+    end
 end
 

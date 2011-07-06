@@ -155,7 +155,7 @@ module Puppet
         return :file_removed
       end
 
-      event = super
+      event = set(value)
 
       event
     end

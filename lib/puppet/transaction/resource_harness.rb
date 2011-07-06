@@ -29,7 +29,7 @@ class Puppet::Transaction::ResourceHarness
   end
 
   def perform_changes(resource)
-    current = resource.retrieve_resource
+    current = retrieve_resource(resource)
 
     cache resource, :checked, Time.now
 
@@ -111,8 +111,16 @@ class Puppet::Transaction::ResourceHarness
       event.message = "current_value #{property.is_to_s(current_value)}, should be #{property.should_to_s(property.should)} (noop)#{brief_audit_message}"
       event.status = "noop"
     else
-      property.sync
-      event.message = [ property.change_to_s(current_value, property.should), brief_audit_message ].join
+      if property.respond_to?(:sync)
+        property.warning "Property #{property.name} on resource type #{resource.class.name} is using the deprecated 'sync' method"
+        property.sync
+      else
+        unless provider = property.resource.provider
+          raise "Cannot make changes to #{property.resource} without provider"
+        end
+        set_value(provider, property, property.resource[property.name])
+      end
+      event.message = [ property.change_to_s(current_value, property.resource[property.name]), brief_audit_message ].join
       event.status = "success"
     end
     event
@@ -154,6 +162,53 @@ class Puppet::Transaction::ResourceHarness
     @transaction = transaction
   end
 
+  # retrieve the current value of all contained properties
+  def retrieve(resource)
+    fail "Provider #{resource.provider.class.name} is not functional on this host" if resource.provider.is_a?(Puppet::Provider) and ! resource.provider.class.suitable?
+
+    result = Puppet::Resource.new(resource.type, resource.title)
+
+    # Provide the name, so we know we'll always refer to a real thing
+    result[:name] = resource[:name] unless resource[:name] == resource.title
+
+    if ensure_prop = resource.property(:ensure) or (resource.class.validattr?(:ensure) and ensure_prop = resource.newattr(:ensure))
+      result[:ensure] = ensure_state = ensure_prop.retrieve
+    else
+      ensure_state = nil
+    end
+
+    resource.properties.each do |property|
+      next if property.name == :ensure
+
+      # If the resource is absent, all properties get set to absent
+      if ensure_state == :absent
+        result[property.name] = :absent
+      else
+        if property.respond_to?(:retrieve)
+          property.warning "Property #{property.name} still uses 'retrieve' in class #{resource.class.name}"
+          result[property.name] = property.retrieve
+        else
+          result[property.name] = resource.provider.send(property.class.name)
+        end
+      end
+    end
+
+    result
+  end
+
+  # Given a resource and desired states, return a resource and current stages
+  def retrieve_resource(resource)
+    resource.pre_retrieve if resource.respond_to?(:pre_retrieve)
+    if resource.respond_to?(:retrieve)
+      resource.warning "Resource type #{resource.class.name} uses deprecated 'retrieve' method"
+      result = resource.retrieve
+    else
+      result = retrieve(resource)
+    end
+    result = Resource.new(resource.type, resource.title, :parameters => result) if result.is_a? Hash
+    result
+  end
+
   def scheduled?(status, resource)
     return true if Puppet[:ignoreschedules]
     return true unless schedule = schedule(resource)
@@ -174,5 +229,24 @@ class Puppet::Transaction::ResourceHarness
 
     return nil unless name = resource[:schedule]
     resource.catalog.resource(:schedule, name) || resource.fail("Could not find schedule #{name}")
+  end
+
+  # Set our value, using the provider, an associated block, or both.
+  def set_value(provider, property, value)
+    # Set a name for looking up associated options like the event.
+    name = property.class.value_name(value)
+
+    call = property.class.value_option(name, :call) || :none
+
+    if call == :instead
+      property.warning "Property #{property.class.name} on resource type #{property.resource.class.name} uses deprecated block for making changes"
+      property.call_valuemethod(name, value)
+    else
+      begin
+        provider.send(property.class.name.to_s + "=", value)
+      rescue NoMethodError
+        self.fail "The #{provider.class.name} provider can not handle attribute #{property.class.name}"
+      end
+    end
   end
 end

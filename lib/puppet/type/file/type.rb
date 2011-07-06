@@ -11,6 +11,10 @@ module Puppet
       current_value
     end
 
+    def sync(value)
+      set(value)
+    end
+
     validate do
       fail "type is read-only"
     end

@@ -305,11 +305,6 @@ class Puppet::Property < Puppet::Parameter
     [newvalue].flatten.join(" ")
   end
 
-  def sync
-    devfail "Got a nil value for should" unless should
-    set(should)
-  end
-
   # Verify that the passed value is valid.
   # If the developer uses a 'validate' hook, this method will get overridden.
   def unsafe_validate(value)

@@ -81,12 +81,13 @@ class Puppet::Transaction::ResourceHarness
       event.message = "current_value #{property.is_to_s(current_value)}, should be #{property.should_to_s(property.should)} (noop)#{brief_audit_message}"
       event.status = "noop"
     else
-      property.sync
+      set_value(property)
       event.message = [ property.change_to_s(current_value, property.should), brief_audit_message ].join
       event.status = "success"
     end
     event
   rescue => detail
+    puts detail.backtrace
     puts detail.backtrace if Puppet[:trace]
     event.status = "failure"
 
@@ -96,6 +97,8 @@ class Puppet::Transaction::ResourceHarness
     event.send_log
   end
 
+  # This is the only truly "public" method on this class - it's the entry
+  # point for all work.
   def evaluate(resource)
     start = Time.now
     status = Puppet::Resource::Status.new(resource)
@@ -190,5 +193,30 @@ class Puppet::Transaction::ResourceHarness
       end
     end
     events
+  end
+
+  # Set our value, using the provider, an associated block, or both.
+  def set_value(property)
+    value = property.should
+    # Set a name for looking up associated options like the event.
+    name = property.class.value_name(value)
+
+    call = property.class.value_option(name, :call) || :none
+
+    if call == :instead
+      property.call_valuemethod(name, value)
+    else
+      # They haven't provided a block, and our parent does not have
+      # a provider, so we have no idea how to handle this.
+      property.fail "#{property.class.name} cannot handle values of type #{value.inspect}" unless property.resource.provider
+      call_provider(property, value)
+    end
+  end
+
+  def call_provider(property, value)
+      provider = property.resource.provider
+      provider.send(property.class.name.to_s + "=", value)
+  rescue NoMethodError
+      property.fail "The #{provider.class.name} provider can not handle attribute #{property.class.name}"
   end
 end

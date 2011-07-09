@@ -355,15 +355,6 @@ describe Puppet::Property do
     end
   end
 
-  describe "when syncing the 'should' value" do
-    it "should set the value" do
-      @class.newvalue(:foo)
-      @property.should = :foo
-      @property.expects(:set).with(:foo)
-      @property.sync
-    end
-  end
-
   describe "when setting a value" do
     it "should catch exceptions and raise Puppet::Error" do
       @class.newvalue(:foo) { raise "eh" }

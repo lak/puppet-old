@@ -246,11 +246,15 @@ describe Puppet::Transaction::ResourceHarness do
                       end
 
                       def expected_resource_foo?
-                        if noop_mode
-                          machine_state
+                        if @noop_mode
+                          @machine_state
                         else
-                          foo_property || machine_state
+                          @foo_property || @machine_state
                         end
+                      end
+
+                      def synced_should_be_set?
+                        !@noop_mode && @status.changed
                       end
 
                       it "should create the resource, or not, as appropriate" do
@@ -279,6 +283,11 @@ describe Puppet::Transaction::ResourceHarness do
                             @resource.provider.foo.should == expected_resource_foo?
                           end
                         end
+                      end
+
+                      it "should correctly cache whether the resource was synced" do
+                        # Check the :synced field on state.yml
+                        (@harness.cached(@resource, :synced) != nil).should == synced_should_be_set?
                       end
 
                       it "should behave properly" do
@@ -328,7 +337,7 @@ describe Puppet::Transaction::ResourceHarness do
                         previously_recorded_ensure_already_logged = false
                         ensure_status_msg = nil
                         if resource_would_be_there_if_not_noop? != (started_present?)
-                          if noop_foo
+                          if noop_mode
                             what_happened = "current_value #{machine_state ? 'present' : 'absent'}, should be #{resource_would_be_there_if_not_noop? ? 'present' : 'absent'} (noop)"
                             expected_status = 'noop'
                           else
@@ -408,10 +417,6 @@ describe Puppet::Transaction::ResourceHarness do
                         # Check legacy summary fields
                         @status.changed.should == (expected_change_count != 0)
                         @status.out_of_sync.should == (expected_out_of_sync_count != 0)
-
-                        # Check the :synced field on state.yml
-                        synced_should_be_set = !noop_mode && @status.changed
-                        (@harness.cached(@resource, :synced) != nil).should == synced_should_be_set
                       end
                     end
                   end

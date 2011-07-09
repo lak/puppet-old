@@ -7,8 +7,74 @@ describe Puppet::Transaction::ResourceHarness do
   include PuppetSpec::Files
 
   before do
+    @resource_type = Puppet::Type.newtype(:harness_test_type) do
+      newparam(:name) do
+        desc "The name var"
+        isnamevar
+      end
+
+      newproperty(:ensure, :parent => Puppet::Property::Ensure) do
+        newvalue(:present) { provider.create }
+        newvalue(:absent) { provider.destroy }
+
+        def insync?(value)
+          if value == :present
+            provider.exists?
+          else
+            ! provider.exists?
+          end
+        end
+      end
+
+      newproperty(:foo) do
+        desc "A property that can be changed successfully"
+        def retrieve
+          :absent
+        end
+
+        def insync?(reference_value)
+          false
+        end
+      end
+
+      newproperty(:bar) do
+        desc "A property that raises an exception when you try to change it"
+        def retrieve
+          :absent
+        end
+
+        def insync?(reference_value)
+          false
+        end
+      end
+    end
+
+    @provider_class = @resource_type.provide :harness_test_provider do
+      attr_accessor :foo, :bar
+
+      def create
+        @present = true
+      end
+
+      def destroy
+        @present = false
+      end
+
+      def exists?
+        if @present
+          true
+        else
+          false
+        end
+      end
+    end
+  end
+
+  after { Puppet::Type.rmtype(:harness_test_type) }
+
+  before do
     @transaction = Puppet::Transaction.new(Puppet::Resource::Catalog.new)
-    @resource = Puppet::Type.type(:file).new :path => "/my/file"
+    @resource = Puppet::Type.type(:harness_test_type).new :name => "/my/file"
     @harness = Puppet::Transaction::ResourceHarness.new(@transaction)
     @current_state = Puppet::Resource.new(:file, "/my/file")
     @resource.stubs(:retrieve).returns @current_state
@@ -62,71 +128,34 @@ describe Puppet::Transaction::ResourceHarness do
     end
   end
 
-  def make_stub_provider
-    stubProvider = Class.new(Puppet::Type)
-    stubProvider.instance_eval do
-      initvars
-
-      newparam(:name) do
-        desc "The name var"
-        isnamevar
-      end
-
-      newproperty(:foo) do
-        desc "A property that can be changed successfully"
-        def sync
-        end
-
-        def retrieve
-          :absent
-        end
-
-        def insync?(reference_value)
-          false
-        end
-      end
-
-      newproperty(:bar) do
-        desc "A property that raises an exception when you try to change it"
-        def sync
-          raise ZeroDivisionError.new('bar')
-        end
-
-        def retrieve
-          :absent
-        end
-
-        def insync?(reference_value)
-          false
-        end
-      end
-    end
-    stubProvider
-  end
-
   describe "when an error occurs" do
     before :each do
-      stub_provider = make_stub_provider
-      resource = stub_provider.new :name => 'name', :foo => 1, :bar => 2
+      resource = @resource_type.new :name => 'name', :ensure => :present, :foo => 1, :bar => 2
+
+      # So there's no ensure event
+      resource.provider.create
       resource.expects(:err).never
+      resource.provider.expects(:bar=).raises ArgumentError
+
       @status = @harness.evaluate(resource)
     end
 
     it "should record previous successful events" do
-      @status.events[0].property.should == 'foo'
-      @status.events[0].status.should == 'success'
+      event = @status.events.find { |e| e.property == "foo" }
+      event.should be_instance_of(Puppet::Transaction::Event)
+      event.status.should == "success"
     end
 
     it "should record a failure event" do
-      @status.events[1].property.should == 'bar'
-      @status.events[1].status.should == 'failure'
+      event = @status.events.find { |e| e.property == "bar" }
+      event.should be_instance_of(Puppet::Transaction::Event)
+      event.status.should == "failure"
     end
   end
 
   describe "when auditing" do
     it "should not call insync? on parameters that are merely audited" do
-      stub_provider = make_stub_provider
-      resource = stub_provider.new :name => 'name', :audit => ['foo']
+      resource = @resource_type.new :name => 'name', :audit => ['foo']
       resource.property(:foo).expects(:insync?).never
       status = @harness.evaluate(resource)
       status.events.each do |event|
@@ -147,206 +176,244 @@ describe Puppet::Transaction::ResourceHarness do
   end
 
   describe "when applying changes" do
+    count = 0
     [false, true].each do |noop_mode|; describe (noop_mode ? "in noop mode" : "in normal mode") do
-      [nil, '750'].each do |machine_state|; describe (machine_state ? "with a file initially present" : "with no file initially present") do
-        [nil, '750', '755'].each do |yaml_mode|
-          [nil, :file, :absent].each do |yaml_ensure|; describe "with mode=#{yaml_mode.inspect} and ensure=#{yaml_ensure.inspect} stored in state.yml" do
+      before { @noop_mode = noop_mode }
+      [nil, 'foo1'].each do |machine_state|; describe (machine_state ? "with a resource initially present" : "with no resource initially present") do
+        before { @machine_state = machine_state }
+        [nil, 'foo1', 'foo2'].each do |yaml_foo|
+          before { @yaml_foo = yaml_foo }
+          [nil, :present, :absent].each do |yaml_ensure|; describe "with cached foo=#{yaml_foo.inspect} and ensure=#{yaml_ensure.inspect} stored in state.yml" do
+            before { @yaml_ensure = yaml_ensure }
             [false, true].each do |auditing_ensure|
-              [false, true].each do |auditing_mode|
+              before { @auditing_ensure = auditing_ensure }
+              [false, true].each do |auditing_foo|
+                before { @auditing_foo = auditing_foo }
                 auditing = []
-                auditing.push(:mode) if auditing_mode
+                auditing.push(:foo) if auditing_foo
                 auditing.push(:ensure) if auditing_ensure
-                [nil, :file, :absent].each do |ensure_property| # what we set "ensure" to in the manifest
-                  [nil, '750', '755'].each do |mode_property| # what we set "mode" to in the manifest
+                [nil, :present, :absent].each do |ensure_property| # what we set "ensure" to in the manifest
+                  before { @ensure_property = ensure_property }
+                  [nil, 'foo1', 'foo2'].each do |foo_property| # what we set "foo" to in the manifest
+                    before { @foo_property = foo_property }
                     manifest_settings = {}
                     manifest_settings[:audit] = auditing if !auditing.empty?
                     manifest_settings[:ensure] = ensure_property if ensure_property
-                    manifest_settings[:mode] = mode_property if mode_property
-                    describe "with manifest settings #{manifest_settings.inspect}" do; it "should behave properly" do
-                      # Set up preconditions
-                      test_file = tmpfile('foo')
-                      if machine_state
-                        File.open(test_file, 'w', machine_state.to_i(8)).close
+                    manifest_settings[:foo] = foo_property if foo_property
+                    describe "with manifest settings #{manifest_settings.inspect}" do
+                      before do
+                        count += 1
+                        name = "/random/chars#{count}"
+                        params = manifest_settings.merge({:name => name})
+                        @resource = Puppet::Type.type(:harness_test_type).new params
+
+                        # Set up preconditions
+                        if machine_state
+                          # This is just a stub, so mark the stub so it will claim it exists and set the 'foo' value
+                          @resource.provider.create
+                          @resource.provider.foo = machine_state
+                        end
+
+                        Puppet[:noop] = noop_mode
+
+                        @harness.cache(@resource, :foo, yaml_foo) if yaml_foo
+                        @harness.cache(@resource, :ensure, yaml_ensure) if yaml_ensure
+
+                        fake_time = Time.utc(2011, 'jan', 3, 12, 24, 0)
+                        Time.stubs(:now).returns(fake_time) # So that Puppet::Resource::Status objects will compare properly
+                        @resource.expects(:err).never # make sure no exceptions get swallowed
+                        # end of preconditions
+
+                        @status = @harness.evaluate(@resource) # do the thing
                       end
 
-                      Puppet[:noop] = noop_mode
-                      params = { :path => test_file, :backup => false }
-                      params.merge!(manifest_settings)
-                      resource = Puppet::Type.type(:file).new params
-
-                      @harness.cache(resource, :mode, yaml_mode) if yaml_mode
-                      @harness.cache(resource, :ensure, yaml_ensure) if yaml_ensure
-
-                      fake_time = Time.utc(2011, 'jan', 3, 12, 24, 0)
-                      Time.stubs(:now).returns(fake_time) # So that Puppet::Resource::Status objects will compare properly
-
-                      resource.expects(:err).never # make sure no exceptions get swallowed
-                      status = @harness.evaluate(resource) # do the thing
-
-                      # check that the state of the machine has been properly updated
-                      expected_logs = []
-                      expected_status_events = []
-                      if auditing_mode
-                        @harness.cached(resource, :mode).should == (machine_state || :absent)
-                      else
-                        @harness.cached(resource, :mode).should == yaml_mode
-                      end
-                      if auditing_ensure
-                        @harness.cached(resource, :ensure).should == (machine_state ? :file : :absent)
-                      else
-                        @harness.cached(resource, :ensure).should == yaml_ensure
-                      end
-                      if ensure_property == :file
-                        file_would_be_there_if_not_noop = true
-                      elsif ensure_property == nil
-                        file_would_be_there_if_not_noop = machine_state != nil
-                      else # ensure_property == :absent
-                        file_would_be_there_if_not_noop = false
-                      end
-                      file_should_be_there = noop_mode ? machine_state != nil : file_would_be_there_if_not_noop
-                      File.exists?(test_file).should == file_should_be_there
-                      if file_should_be_there
-                        if noop_mode
-                          expected_file_mode = machine_state
-                        else
-                          expected_file_mode = mode_property || machine_state
-                        end
-                        if !expected_file_mode
-                          # we didn't specify a mode and the file was created, so mode comes from umode
-                        else
-                          file_mode = File.stat(test_file).mode & 0777
-                          file_mode.should == expected_file_mode.to_i(8)
-                        end
+                      def started_present?
+                        @machine_state != nil
                       end
 
-                      # Test log output for the "mode" parameter
-                      previously_recorded_mode_already_logged = false
-                      mode_status_msg = nil
-                      if machine_state && file_would_be_there_if_not_noop && mode_property && machine_state != mode_property
-                        if noop_mode
-                          what_happened = "current_value #{machine_state}, should be #{mode_property} (noop)"
-                          expected_status = 'noop'
-                        else
-                          what_happened = "mode changed '#{machine_state}' to '#{mode_property}'"
-                          expected_status = 'success'
-                        end
-                        if auditing_mode && yaml_mode && yaml_mode != machine_state
-                          previously_recorded_mode_already_logged = true
-                          mode_status_msg = "#{what_happened} (previously recorded value was #{yaml_mode})"
-                        else
-                          mode_status_msg = what_happened
-                        end
-                        expected_logs << "notice: /#{resource}/mode: #{mode_status_msg}"
-                      end
-                      if @harness.cached(resource, :mode) && @harness.cached(resource, :mode) != yaml_mode
-                        if yaml_mode
-                          unless previously_recorded_mode_already_logged
-                            mode_status_msg = "audit change: previously recorded value #{yaml_mode} has been changed to #{@harness.cached(resource, :mode)}"
-                            expected_logs << "notice: /#{resource}/mode: #{mode_status_msg}"
-                            expected_status = 'audit'
-                          end
-                        else
-                          expected_logs << "notice: /#{resource}/mode: audit change: newly-recorded value #{@harness.cached(resource, :mode)}"
-                        end
-                      end
-                      if mode_status_msg
-                        expected_status_events << Puppet::Transaction::Event.new(
-                            :source_description => "/#{resource}/mode", :resource => resource, :file => nil,
-                            :line => nil, :tags => %w{file}, :desired_value => mode_property,
-                            :historical_value => yaml_mode, :message => mode_status_msg, :name => :mode_changed,
-                            :previous_value => machine_state || :absent, :property => :mode, :status => expected_status,
-                            :audited => auditing_mode)
-                      end
-
-                      # Test log output for the "ensure" parameter
-                      previously_recorded_ensure_already_logged = false
-                      ensure_status_msg = nil
-                      if file_would_be_there_if_not_noop != (machine_state != nil)
-                        if noop_mode
-                          what_happened = "current_value #{machine_state ? 'file' : 'absent'}, should be #{file_would_be_there_if_not_noop ? 'file' : 'absent'} (noop)"
-                          expected_status = 'noop'
-                        else
-                          what_happened = file_would_be_there_if_not_noop ? 'created' : 'removed'
-                          expected_status = 'success'
-                        end
-                        if auditing_ensure && yaml_ensure && yaml_ensure != (machine_state ? :file : :absent)
-                          previously_recorded_ensure_already_logged = true
-                          ensure_status_msg = "#{what_happened} (previously recorded value was #{yaml_ensure})"
-                        else
-                          ensure_status_msg = "#{what_happened}"
-                        end
-                        expected_logs << "notice: /#{resource}/ensure: #{ensure_status_msg}"
-                      end
-                      if @harness.cached(resource, :ensure) && @harness.cached(resource, :ensure) != yaml_ensure
-                        if yaml_ensure
-                          unless previously_recorded_ensure_already_logged
-                            ensure_status_msg = "audit change: previously recorded value #{yaml_ensure} has been changed to #{@harness.cached(resource, :ensure)}"
-                            expected_logs << "notice: /#{resource}/ensure: #{ensure_status_msg}"
-                            expected_status = 'audit'
-                          end
-                        else
-                          expected_logs << "notice: /#{resource}/ensure: audit change: newly-recorded value #{@harness.cached(resource, :ensure)}"
-                        end
-                      end
-                      if ensure_status_msg
-                        if ensure_property == :file
-                          ensure_event_name = :file_created
-                        elsif ensure_property == nil
-                          ensure_event_name = :file_changed
+                      def resource_would_be_there_if_not_noop?
+                        if @ensure_property == :present
+                          true
+                        elsif @ensure_property == nil
+                          started_present?
                         else # ensure_property == :absent
-                          ensure_event_name = :file_removed
+                          false
                         end
-                        expected_status_events << Puppet::Transaction::Event.new(
-                            :source_description => "/#{resource}/ensure", :resource => resource, :file => nil,
-                            :line => nil, :tags => %w{file}, :desired_value => ensure_property,
-                            :historical_value => yaml_ensure, :message => ensure_status_msg, :name => ensure_event_name,
-                            :previous_value => machine_state ? :file : :absent, :property => :ensure,
-                            :status => expected_status, :audited => auditing_ensure)
                       end
 
-                      # Actually check the logs.
-                      @logs.map {|l| "#{l.level}: #{l.source}: #{l.message}"}.should =~ expected_logs
+                      def resource_should_be_there?
+                        @noop_mode ? started_present? : resource_would_be_there_if_not_noop?
+                      end
 
-                      # All the log messages should show up as events except the "newly-recorded" ones.
-                      expected_event_logs = @logs.reject {|l| l.message =~ /newly-recorded/ }
-                      status.events.map {|e| e.message}.should =~ expected_event_logs.map {|l| l.message }
-                      events_to_hash(status.events).should =~ events_to_hash(expected_status_events)
+                      def expected_resource_foo?
+                        if noop_mode
+                          machine_state
+                        else
+                          foo_property || machine_state
+                        end
+                      end
 
-                      # Check change count - this is the number of changes that actually occurred.
-                      expected_change_count = 0
-                      if (machine_state != nil) != file_should_be_there
-                        expected_change_count = 1
-                      elsif machine_state != nil
-                        if expected_file_mode != machine_state
+                      it "should create the resource, or not, as appropriate" do
+                        @resource.provider.exists?.should == resource_should_be_there?
+                      end
+
+                      it "should cache data appropraiately" do
+                        if auditing_foo
+                          @harness.cached(@resource, :foo).should == (machine_state || :absent)
+                        else
+                          @harness.cached(@resource, :foo).should == yaml_foo
+                        end
+                        if auditing_ensure
+                          @harness.cached(@resource, :ensure).should == (machine_state ? :present : :absent)
+                        else
+                          @harness.cached(@resource, :ensure).should == yaml_ensure
+                        end
+                      end
+
+                      it "should set non-ensure states appropriately" do
+                        # check that the state of the machine has been properly updated
+                        if resource_should_be_there?
+                          if !expected_resource_foo?
+                            # we didn't specify a foo and the resource was created, so foo comes from the set state in the provider
+                          else
+                            @resource.provider.foo.should == expected_resource_foo?
+                          end
+                        end
+                      end
+
+                      it "should behave properly" do
+                        # Test log output for the "foo" parameter
+                        previously_recorded_foo_already_logged = false
+                        foo_status_msg = nil
+
+                        expected_logs = []
+                        if machine_state && resource_would_be_there_if_not_noop? && foo_property && (machine_state != foo_property)
+                          if noop_mode
+                            what_happened = "current_value #{machine_state}, should be #{foo_property} (noop)"
+                            expected_status = 'noop'
+                          else
+                            what_happened = "foo changed '#{machine_state}' to '#{foo_property}'"
+                            expected_status = 'success'
+                          end
+                          if auditing_foo && yaml_foo && yaml_foo != machine_state
+                            previously_recorded_foo_already_logged = true
+                            foo_status_msg = "#{what_happened} (previously recorded value was #{yaml_foo})"
+                          else
+                            foo_status_msg = what_happened
+                          end
+                          expected_logs << "notice: /#{@resource}/foo: #{foo_status_msg}"
+                        end
+                        if @harness.cached(@resource, :foo) && @harness.cached(@resource, :foo) != yaml_foo
+                          if yaml_foo
+                            unless previously_recorded_foo_already_logged
+                              foo_status_msg = "audit change: previously recorded value #{yaml_foo} has been changed to #{@harness.cached(@resource, :foo)}"
+                              expected_logs << "notice: /#{@resource}/foo: #{foo_status_msg}"
+                              expected_status = 'audit'
+                            end
+                          else
+                            expected_logs << "notice: /#{@resource}/foo: audit change: newly-recorded value #{@harness.cached(@resource, :foo)}"
+                          end
+                        end
+                        expected_status_events = []
+                        if foo_status_msg
+                          expected_status_events << Puppet::Transaction::Event.new(
+                              :source_description => "/#{@resource}/foo", :resource => @resource, :file => nil,
+                              :line => nil, :tags => %w{harness_test_type}, :desired_value => foo_property,
+                              :historical_value => yaml_foo, :message => foo_status_msg, :name => :foo_changed,
+                              :previous_value => machine_state || :absent, :property => :foo, :status => expected_status,
+                              :audited => auditing_foo)
+                        end
+
+                        # Test log output for the "ensure" parameter
+                        previously_recorded_ensure_already_logged = false
+                        ensure_status_msg = nil
+                        if resource_would_be_there_if_not_noop? != (started_present?)
+                          if noop_foo
+                            what_happened = "current_value #{machine_state ? 'present' : 'absent'}, should be #{resource_would_be_there_if_not_noop? ? 'present' : 'absent'} (noop)"
+                            expected_status = 'noop'
+                          else
+                            what_happened = resource_would_be_there_if_not_noop? ? 'created' : 'removed'
+                            expected_status = 'success'
+                          end
+                          if auditing_ensure && yaml_ensure && yaml_ensure != (machine_state ? :present : :absent)
+                            previously_recorded_ensure_already_logged = true
+                            ensure_status_msg = "#{what_happened} (previously recorded value was #{yaml_ensure})"
+                          else
+                            ensure_status_msg = "#{what_happened}"
+                          end
+                          expected_logs << "notice: /#{@resource}/ensure: #{ensure_status_msg}"
+                        end
+                        if @harness.cached(@resource, :ensure) && @harness.cached(@resource, :ensure) != yaml_ensure
+                          if yaml_ensure
+                            unless previously_recorded_ensure_already_logged
+                              ensure_status_msg = "audit change: previously recorded value #{yaml_ensure} has been changed to #{@harness.cached(@resource, :ensure)}"
+                              expected_logs << "notice: /#{@resource}/ensure: #{ensure_status_msg}"
+                              expected_status = 'audit'
+                            end
+                          else
+                            expected_logs << "notice: /#{@resource}/ensure: audit change: newly-recorded value #{@harness.cached(@resource, :ensure)}"
+                          end
+                        end
+                        if ensure_status_msg
+                          if ensure_property == :present
+                            ensure_event_name = :harness_test_type_created
+                          elsif ensure_property == nil
+                            ensure_event_name = :harness_test_type_changed
+                          else # ensure_property == :absent
+                            ensure_event_name = :harness_test_type_removed
+                          end
+                          expected_status_events << Puppet::Transaction::Event.new(
+                              :source_description => "/#{@resource}/ensure", :resource => @resource, :file => nil,
+                              :line => nil, :tags => %w{harness_test_type}, :desired_value => ensure_property,
+                              :historical_value => yaml_ensure, :message => ensure_status_msg, :name => ensure_event_name,
+                              :previous_value => machine_state ? :present : :absent, :property => :ensure,
+                              :status => expected_status, :audited => auditing_ensure)
+                        end
+
+                        # Actually check the logs.
+                        @logs.map {|l| "#{l.level}: #{l.source}: #{l.message}"}.should =~ expected_logs
+
+                        # All the log messages should show up as events except the "newly-recorded" ones.
+                        expected_event_logs = @logs.reject {|l| l.message =~ /newly-recorded/ }
+                        @status.events.map {|e| e.message}.should =~ expected_event_logs.map {|l| l.message }
+                        events_to_hash(@status.events).should =~ events_to_hash(expected_status_events)
+
+                        # Check change count - this is the number of changes that actually occurred.
+                        expected_change_count = 0
+                        if (started_present?) != resource_should_be_there?
                           expected_change_count = 1
+                        elsif started_present?
+                          if expected_resource_foo? != machine_state
+                            expected_change_count = 1
+                          end
                         end
-                      end
-                      status.change_count.should == expected_change_count
+                        @status.change_count.should == expected_change_count
 
-                      # Check out of sync count - this is the number
-                      # of changes that would have occurred in
-                      # non-noop mode.
-                      expected_out_of_sync_count = 0
-                      if (machine_state != nil) != file_would_be_there_if_not_noop
-                        expected_out_of_sync_count = 1
-                      elsif machine_state != nil
-                        if mode_property != nil && mode_property != machine_state
+                        # Check out of sync count - this is the number
+                        # of changes that would have occurred in
+                        # non-noop mode.
+                        expected_out_of_sync_count = 0
+                        if (started_present?) != resource_would_be_there_if_not_noop?
                           expected_out_of_sync_count = 1
+                        elsif started_present?
+                          if foo_property != nil && foo_property != machine_state
+                            expected_out_of_sync_count = 1
+                          end
                         end
-                      end
-                      if !noop_mode
-                        expected_out_of_sync_count.should == expected_change_count
-                      end
-                      status.out_of_sync_count.should == expected_out_of_sync_count
+                        if !noop_mode
+                          expected_out_of_sync_count.should == expected_change_count
+                        end
+                        @status.out_of_sync_count.should == expected_out_of_sync_count
 
-                      # Check legacy summary fields
-                      status.changed.should == (expected_change_count != 0)
-                      status.out_of_sync.should == (expected_out_of_sync_count != 0)
+                        # Check legacy summary fields
+                        @status.changed.should == (expected_change_count != 0)
+                        @status.out_of_sync.should == (expected_out_of_sync_count != 0)
 
-                      # Check the :synced field on state.yml
-                      synced_should_be_set = !noop_mode && status.changed
-                      (@harness.cached(resource, :synced) != nil).should == synced_should_be_set
-                    end; end
+                        # Check the :synced field on state.yml
+                        synced_should_be_set = !noop_mode && @status.changed
+                        (@harness.cached(@resource, :synced) != nil).should == synced_should_be_set
+                      end
+                    end
                   end
                 end
               end
@@ -476,5 +543,45 @@ describe Puppet::Transaction::ResourceHarness do
     data = {:foo => "other"}
     Puppet::Util::Storage.expects(:cache).with(@resource).returns data
     @harness.cached(@resource, :foo).should == "other"
+  end
+
+  describe "when setting a value" do
+    before do
+      @property = @resource.parameter(:mode)
+      @class = Class.new(Puppet::Property) do
+        @name = :foo
+      end
+      @class.initvars
+      @resource = Puppet::Type.type(:mount).new :name => "/foo"
+      @provider = @resource.provider
+      @property = @class.new :resource => @resource
+    end
+
+    it "should catch exceptions and raise Puppet::Error" do
+      @class.newvalue(:foo) { raise "eh" }
+      lambda { @property.set(:foo) }.should raise_error(Puppet::Error)
+    end
+
+    describe "that was defined without a block" do
+      it "should call the settor on the provider" do
+        @class.newvalue(:bar)
+        @provider.expects(:foo=).with :bar
+        @property.set(:bar)
+      end
+    end
+
+    describe "that was defined with a block" do
+      it "should call the method created for the value if the value is not a regex" do
+        @class.newvalue(:bar) {}
+        @property.expects(:set_bar)
+        @property.set(:bar)
+      end
+
+      it "should call the provided block if the value is a regex" do
+        @class.newvalue(/./) { self.test }
+        @property.expects(:test)
+        @property.set("foo")
+      end
+    end
   end
 end

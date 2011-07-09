@@ -37,46 +37,16 @@ class Puppet::Transaction::ResourceHarness
 
     current_values = current.to_hash
     historical_values = Puppet::Util::Storage.cache(resource).dup
-    desired_values = {}
-    resource.properties.each do |property|
-      desired_values[property.name] = property.should
-    end
-    audited_params = (resource[:audit] || []).map { |p| p.to_sym }
     synced_params = []
 
     # Record the current state in state.yml.
-    audited_params.each do |param|
-      cache(resource, param, current_values[param])
-    end
+    audited_params = cache_current_state(resource, current_values)
 
     # Update the machine state & create logs/events
-    events = []
-    ensure_param = resource.parameter(:ensure)
-    if desired_values[:ensure] && !ensure_param.safe_insync?(current_values[:ensure])
-      events << apply_parameter(ensure_param, current_values[:ensure], audited_params.include?(:ensure), historical_values[:ensure])
-      synced_params << :ensure
-    elsif current_values[:ensure] != :absent
-      work_order = resource.properties # Note: only the resource knows what order to apply changes in
-      work_order.each do |param|
-        if desired_values[param.name] && !param.safe_insync?(current_values[param.name])
-          events << apply_parameter(param, current_values[param.name], audited_params.include?(param.name), historical_values[param.name])
-          synced_params << param.name
-        end
-      end
-    end
+    synced_params, events = update_machine_state(resource, current_values, historical_values, audited_params)
 
     # Add more events to capture audit results
-    audited_params.each do |param_name|
-      if historical_values.include?(param_name)
-        if historical_values[param_name] != current_values[param_name] && !synced_params.include?(param_name)
-          event = create_change_event(resource.parameter(param_name), current_values[param_name], true, historical_values[param_name])
-          event.send_log
-          events << event
-        end
-      else
-        resource.property(param_name).notice "audit change: newly-recorded value #{current_values[param_name]}"
-      end
-    end
+    events += capture_audit_results(resource, audited_params, historical_values, current_values, synced_params)
 
     events
   end
@@ -142,6 +112,7 @@ class Puppet::Transaction::ResourceHarness
     return status
   rescue => detail
     resource.fail "Could not create resource status: #{detail}" unless status
+    puts detail.backtrace
     puts detail.backtrace if Puppet[:trace]
     resource.err "Could not evaluate: #{detail}"
     status.failed = true
@@ -174,5 +145,50 @@ class Puppet::Transaction::ResourceHarness
 
     return nil unless name = resource[:schedule]
     resource.catalog.resource(:schedule, name) || resource.fail("Could not find schedule #{name}")
+  end
+
+  private
+
+  def cache_current_state(resource, current_values)
+    audited_params = (resource[:audit] || []).map { |p| p.to_sym }
+    audited_params.each do |param|
+      cache(resource, param, current_values[param])
+    end
+    audited_params
+  end
+
+  def update_machine_state(resource, current_values, historical_values, audited_params)
+    events = []
+    synced_params = []
+    ensure_param = resource.parameter(:ensure)
+    if ensure_param and resource[:ensure] && !ensure_param.safe_insync?(current_values[:ensure])
+      events << apply_parameter(ensure_param, current_values[:ensure], audited_params.include?(:ensure), historical_values[:ensure])
+      synced_params << :ensure
+    elsif current_values[:ensure] != :absent
+      work_order = resource.properties # Note: only the resource knows what order to apply changes in
+      work_order.each do |param|
+        if resource[param.name] && !param.safe_insync?(current_values[param.name])
+          events << apply_parameter(param, current_values[param.name], audited_params.include?(param.name), historical_values[param.name])
+          synced_params << param.name
+        end
+      end
+    end
+    return [synced_params, events]
+  end
+
+  def capture_audit_results(resource, audited_params, historical_values, current_values, synced_params)
+    events = []
+    audited_params.each do |param_name|
+      if historical_values.include?(param_name)
+        if historical_values[param_name] != current_values[param_name] && !synced_params.include?(param_name)
+          event = create_change_event(resource.parameter(param_name), current_values[param_name], true, historical_values[param_name])
+          event.send_log
+          events << event
+        end
+      else
+        resource.property(param_name).notice "audit change: newly-recorded value #{current_values[param_name]}"
+      end
+    end
+    events
   end
 end

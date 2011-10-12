@@ -8,7 +8,7 @@ Puppet::Type.type(:service).provide :bsd, :parent => :init do
 
   confine :operatingsystem => [:freebsd, :netbsd, :openbsd]
 
-  @@rcconf_dir = '/etc/rc.conf.d'
+  class_variable_set(:@@rcconf_dir, '/etc/rc.conf.d')
 
   def self.defpath
     superclass.defpath

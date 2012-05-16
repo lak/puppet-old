@@ -99,14 +99,13 @@ Puppet::Type.newtype(:tidy) do
 
       Specifying 0 will remove all files."
 
-    @@ageconvertors = {
+    class_variable_set(:@@ageconvertors, {
       :s => 1,
-      :m => 60
-    }
-
-    @@ageconvertors[:h] = @@ageconvertors[:m] * 60
-    @@ageconvertors[:d] = @@ageconvertors[:h] * 24
-    @@ageconvertors[:w] = @@ageconvertors[:d] * 7
+      :m => 60,
+      :h => 3600,
+      :d => 86400,
+      :w => 604800
+    })
 
     def convert(unit, multi)
       if num = @@ageconvertors[unit]
@@ -146,13 +145,13 @@ Puppet::Type.newtype(:tidy) do
       Only the first character is significant, so the full word can also 
       be used."
 
-    @@sizeconvertors = {
+    class_variable_set(:@@sizeconvertors,  {
       :b => 0,
       :k => 1,
       :m => 2,
       :g => 3,
       :t => 4
-    }
+    })
 
     def convert(unit, multi)
       if num = @@sizeconvertors[unit]
